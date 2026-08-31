@@ -55,7 +55,7 @@ A modern, responsive Point-of-Sale (POS) and cashier management web application 
 
 ---
 
-## 🔑 Kredensial Default
+## Kredensial Default
 
 - **Administrator:** `admin123`
-- **Karyawan Default:** `kyoto123` *(atau kunci acak yang digenerate oleh Admin)*
+- **Karyawan Default:** `kyoto123` 
