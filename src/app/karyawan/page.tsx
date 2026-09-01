@@ -741,12 +741,21 @@ export default function KaryawanPage() {
                 </div>
 
                 {/* QR Code */}
-                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "8px", padding: "16px", backgroundColor: "#ffffff", borderRadius: "var(--r-lg)", border: "1.5px solid var(--surface-border)", marginBottom: "16px" }}>
-                  <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>Scan QRIS untuk Bayar</p>
+                <div style={{ display: "flex", flexDirection: "column", alignItems: "center", gap: "10px", padding: "16px", backgroundColor: "#ffffff", borderRadius: "var(--r-lg)", border: "1.5px solid var(--surface-border)", marginBottom: "16px" }}>
+                  <div style={{ textAlign: "center" }}>
+                    <p style={{ fontSize: "13px", fontWeight: 800, color: "var(--ink-primary)" }}>MATCHA KYOTO PERDANA 4RQ</p>
+                    <p style={{ fontSize: "10px", color: "var(--ink-muted)", fontFamily: "var(--font-geist-mono)" }}>NMID: ID1026582264820 · PNTNK BR</p>
+                  </div>
+
                   {/* eslint-disable-next-line @next/next/no-img-element */}
-                  <img src={state.qrisImageUrl || qrisUrl} alt="QRIS" width={200} height={200} style={{ borderRadius: "12px" }} />
-                  <p style={{ fontSize: "11px", color: "var(--ink-muted)", textAlign: "center" }}>
-                    {state.qrisImageUrl ? "QRIS Toko Aktif" : "QRIS Otomatis"}
+                  <img
+                    src={state.qrisImageUrl || "/qris.jpg"}
+                    alt="QRIS Matcha Kyoto Perdana 4RQ"
+                    style={{ width: "100%", maxWidth: "260px", height: "auto", borderRadius: "10px", border: "1px solid var(--surface-border)", boxShadow: "0 4px 12px rgba(0,0,0,0.06)" }}
+                  />
+
+                  <p style={{ fontSize: "11px", color: "var(--ink-muted)", textAlign: "center", lineHeight: 1.3 }}>
+                    Scan menggunakan BCA, Mandiri, GoPay, OVO, Dana, ShopeePay, dll.
                   </p>
                 </div>
 

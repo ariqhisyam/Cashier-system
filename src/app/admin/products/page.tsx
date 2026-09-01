@@ -108,6 +108,24 @@ export default function AdminProductsPage() {
                 <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>Ditampilkan saat kasir checkout</p>
               </div>
             </div>
+
+            {/* QRIS Active Preview */}
+            <div style={{ display: "flex", alignItems: "center", gap: "12px", backgroundColor: "var(--bg-app)", padding: "10px 12px", borderRadius: "var(--r-md)", marginBottom: "12px" }}>
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={state.qrisImageUrl || "/qris.jpg"}
+                alt="QRIS Preview"
+                style={{ width: "60px", height: "80px", objectFit: "cover", borderRadius: "6px", border: "1px solid var(--surface-border)" }}
+              />
+              <div>
+                <p style={{ fontSize: "12px", fontWeight: 800, color: "var(--ink-primary)" }}>MATCHA KYOTO PERDANA 4RQ</p>
+                <p style={{ fontSize: "10px", color: "var(--ink-muted)" }}>NMID: ID1026582264820 · PNTNK BR</p>
+                <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#15803d", fontWeight: 700, marginTop: "4px", display: "inline-block" }}>
+                  🟢 QRIS Aktif
+                </span>
+              </div>
+            </div>
+
             <input
               type="url"
               placeholder="Masukkan URL gambar QRIS..."
