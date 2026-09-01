@@ -570,14 +570,15 @@ export default function KaryawanPage() {
           <div className="modal-sheet">
             <div className="drag-handle" />
 
-            {/* Hidden persistent Camera Input */}
+            {/* Hidden persistent Camera Input with ID for native label binding */}
             <input
+              id="qris-camera-input"
               ref={fileInputRef}
               type="file"
               accept="image/*"
               capture="environment"
               onChange={handleQrisProofUpload}
-              style={{ display: "none" }}
+              style={{ position: "fixed", top: "-1000px", left: "-1000px", opacity: 0, pointerEvents: "none" }}
             />
 
             {/* Step: Pilih Metode Pembayaran */}
@@ -778,14 +779,17 @@ export default function KaryawanPage() {
                 </div>
 
                 {/* Upload proof button */}
-                <button
-                  type="button"
+                <label
+                  htmlFor="qris-camera-input"
                   className="btn-primary"
-                  onClick={handleRetakePhoto}
+                  style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", cursor: "pointer", width: "100%" }}
+                  onClick={() => {
+                    if (fileInputRef.current) fileInputRef.current.value = "";
+                  }}
                 >
                   <Camera size={18} weight="bold" />
                   <span>Foto Bukti Pembayaran</span>
-                </button>
+                </label>
               </>
             )}
 
@@ -817,17 +821,20 @@ export default function KaryawanPage() {
                 )}
 
                 <div style={{ display: "flex", gap: "10px" }}>
-                  <button
-                    type="button"
-                    onClick={handleRetakePhoto}
+                  <label
+                    htmlFor="qris-camera-input"
                     style={{
                       flex: 1, padding: "12px", borderRadius: "var(--r-pill)",
                       border: "1.5px solid var(--surface-border)", backgroundColor: "var(--surface)",
                       fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)", cursor: "pointer",
+                      display: "flex", alignItems: "center", justifyContent: "center",
+                    }}
+                    onClick={() => {
+                      if (fileInputRef.current) fileInputRef.current.value = "";
                     }}
                   >
                     Foto Ulang
-                  </button>
+                  </label>
                   <button type="button" className="btn-primary" onClick={finalize} style={{ flex: 2 }}>
                     Selesai & Cetak Struk
                   </button>
