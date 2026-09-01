@@ -32,10 +32,24 @@ export interface Transaction {
   qrisProofUrl?: string;   // for qris payments (base64 data URL)
 }
 
+export type UserRole = "ADMIN" | "KARYAWAN";
+
+export interface User {
+  id: string;
+  name: string;
+  key: string;
+  role: UserRole;
+  monthlySalary?: number;
+  isActive: boolean;
+  createdAt: string | number;
+  updatedAt?: string | number;
+}
+
 export interface Employee {
   id: string;
   name: string;
   key: string;
+  role?: UserRole;
   createdAt: number;
   isActive: boolean;
   monthlySalary?: number; // optional, default 0

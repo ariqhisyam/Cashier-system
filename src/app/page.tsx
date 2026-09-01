@@ -5,6 +5,7 @@ import { useStore } from "@/lib/store";
 import Image from "next/image";
 import { User, ShieldCheck, ArrowRight, Key, Sparkle } from "@phosphor-icons/react";
 import type { Employee } from "@/lib/types";
+import { getUsers } from "@/lib/api/users";
 
 export default function LoginPage() {
   const { state, dispatch } = useStore();
@@ -12,8 +13,9 @@ export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState<"karyawan" | "admin">("karyawan");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
 
-  function handleLogin() {
+  async function handleLogin() {
     setError("");
 
     if (selectedRole === "admin") {
@@ -27,20 +29,61 @@ export default function LoginPage() {
     }
 
     // Role Karyawan
+    setIsLoggingIn(true);
     let targetEmployee: Employee | null = null;
-    const matchedEmployee = state.employees.find(
-      (emp) => emp.key.trim().toLowerCase() === password.trim().toLowerCase()
-    );
 
-    if (matchedEmployee) {
-      if (!matchedEmployee.isActive) {
-        setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
-        return;
+    try {
+      // 1. Try querying backend users by key
+      const res = await getUsers({ search: password.trim() });
+      const matchedBackendUser = res.users.find(
+        (u) => u.key.trim().toLowerCase() === password.trim().toLowerCase()
+      );
+
+      if (matchedBackendUser) {
+        if (!matchedBackendUser.isActive) {
+          setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
+          setIsLoggingIn(false);
+          return;
+        }
+        targetEmployee = {
+          id: matchedBackendUser.id,
+          name: matchedBackendUser.name,
+          key: matchedBackendUser.key,
+          role: matchedBackendUser.role,
+          monthlySalary: matchedBackendUser.monthlySalary,
+          createdAt: typeof matchedBackendUser.createdAt === "number" ? matchedBackendUser.createdAt : Date.now(),
+          isActive: matchedBackendUser.isActive,
+        };
       }
-      targetEmployee = matchedEmployee;
-    } else if (password === "kyoto123") {
-      targetEmployee = { id: "default", name: "Kasir Utama", key: "kyoto123", createdAt: Date.now(), isActive: true };
+    } catch {
+      // Ignore backend network error, fallback to local store
     }
+
+    // 2. Fallback to local store employees if not found on backend
+    if (!targetEmployee) {
+      const matchedEmployee = state.employees.find(
+        (emp) => emp.key.trim().toLowerCase() === password.trim().toLowerCase()
+      );
+
+      if (matchedEmployee) {
+        if (!matchedEmployee.isActive) {
+          setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
+          setIsLoggingIn(false);
+          return;
+        }
+        targetEmployee = matchedEmployee;
+      } else if (password === "kyoto123") {
+        targetEmployee = {
+          id: "default",
+          name: "Kasir Utama",
+          key: "kyoto123",
+          createdAt: Date.now(),
+          isActive: true,
+        };
+      }
+    }
+
+    setIsLoggingIn(false);
 
     if (!targetEmployee) {
       setError("Kunci akses karyawan tidak ditemukan atau salah.");
@@ -345,9 +388,14 @@ export default function LoginPage() {
           type="button"
           className="btn-primary"
           onClick={handleLogin}
+          disabled={isLoggingIn}
           style={{ marginTop: "4px" }}
         >
-          <span>Masuk ke {selectedRole === "admin" ? "Admin" : "Kasir"}</span>
+          <span>
+            {isLoggingIn
+              ? "Memverifikasi..."
+              : `Masuk ke ${selectedRole === "admin" ? "Admin" : "Kasir"}`}
+          </span>
           <ArrowRight size={18} weight="bold" />
         </button>
 

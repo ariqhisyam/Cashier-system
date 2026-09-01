@@ -1,7 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Geist, Geist_Mono } from "next/font/google";
 import "./globals.css";
-import { StoreProvider } from "@/lib/store";
+import Providers from "@/components/Providers";
 import PWARegister from "@/components/PWARegister";
 
 const geistSans = Geist({ variable: "--font-geist-sans", subsets: ["latin"] });
@@ -44,12 +44,12 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
       </head>
       <body>
-        <StoreProvider>
+        <Providers>
           <PWARegister />
           <div className="app-viewport-wrapper">
             {children}
           </div>
-        </StoreProvider>
+        </Providers>
       </body>
     </html>
   );
