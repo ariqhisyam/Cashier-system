@@ -3,9 +3,8 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import Image from "next/image";
-import { User, ShieldCheck, ArrowRight, Key, Sparkle, MapPin, SpinnerGap } from "@phosphor-icons/react";
-import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
-import type { AttendanceRecord, Employee } from "@/lib/types";
+import { User, ShieldCheck, ArrowRight, Key, Sparkle } from "@phosphor-icons/react";
+import type { Employee } from "@/lib/types";
 
 export default function LoginPage() {
   const { state, dispatch } = useStore();
@@ -13,9 +12,8 @@ export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState<"karyawan" | "admin">("karyawan");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
-  const [isVerifyingLocation, setIsVerifyingLocation] = useState(false);
 
-  async function handleLogin() {
+  function handleLogin() {
     setError("");
 
     if (selectedRole === "admin") {
@@ -47,61 +45,6 @@ export default function LoginPage() {
     if (!targetEmployee) {
       setError("Kunci akses karyawan tidak ditemukan atau salah.");
       return;
-    }
-
-    // Geofencing Check if enabled
-    const locationConfig = state.outletLocation;
-    if (locationConfig?.isEnabled) {
-      setIsVerifyingLocation(true);
-      try {
-        const coords = await getCurrentPositionAsync();
-        const distance = calculateDistanceMeters(
-          coords.latitude,
-          coords.longitude,
-          locationConfig.latitude,
-          locationConfig.longitude
-        );
-
-        if (distance > locationConfig.radiusMeters) {
-          setIsVerifyingLocation(false);
-          setError(
-            `📍 Lokasi Anda di luar area outlet (Jarak: ${distance}m dari toko). Presensi kasir hanya diizinkan dalam radius ${locationConfig.radiusMeters}m dari outlet.`
-          );
-          return;
-        }
-
-        // Record clock-in attendance
-        const attendance: AttendanceRecord = {
-          id: crypto.randomUUID(),
-          employeeId: targetEmployee.id,
-          employeeName: targetEmployee.name,
-          clockIn: Date.now(),
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          distanceMeters: distance,
-          dateString: new Date().toISOString().split("T")[0],
-        };
-        dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
-      } catch (err: unknown) {
-        setIsVerifyingLocation(false);
-        const errorMsg = err instanceof Error ? err.message : "Gagal memverifikasi lokasi GPS.";
-        setError(errorMsg);
-        return;
-      }
-      setIsVerifyingLocation(false);
-    } else {
-      // If geofencing disabled, record basic clock-in
-      const attendance: AttendanceRecord = {
-        id: crypto.randomUUID(),
-        employeeId: targetEmployee.id,
-        employeeName: targetEmployee.name,
-        clockIn: Date.now(),
-        latitude: locationConfig?.latitude ?? 0,
-        longitude: locationConfig?.longitude ?? 0,
-        distanceMeters: 0,
-        dateString: new Date().toISOString().split("T")[0],
-      };
-      dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
     }
 
     dispatch({ type: "LOGIN", payload: { role: "karyawan", employee: targetEmployee } });
@@ -397,35 +340,16 @@ export default function LoginPage() {
           )}
         </div>
 
-        {/* Geofencing indicator for employees */}
-        {selectedRole === "karyawan" && state.outletLocation?.isEnabled && (
-          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--ink-muted)", marginTop: "-6px" }}>
-            <MapPin size={14} color="var(--primary)" weight="fill" />
-            <span>Presensi GPS Aktif (Radius: {state.outletLocation.radiusMeters}m dari outlet)</span>
-          </div>
-        )}
-
         {/* Login Action Button */}
         <button
           type="button"
           className="btn-primary"
           onClick={handleLogin}
-          disabled={isVerifyingLocation}
           style={{ marginTop: "4px" }}
         >
-          {isVerifyingLocation ? (
-            <>
-              <SpinnerGap size={18} className="animate-spin" />
-              <span>Memverifikasi Lokasi Outlet...</span>
-            </>
-          ) : (
-            <>
-              <span>Masuk ke {selectedRole === "admin" ? "Admin" : "Kasir"}</span>
-              <ArrowRight size={18} weight="bold" />
-            </>
-          )}
+          <span>Masuk ke {selectedRole === "admin" ? "Admin" : "Kasir"}</span>
+          <ArrowRight size={18} weight="bold" />
         </button>
-
 
         </div>
       </div>
