@@ -121,7 +121,7 @@ export default function AdminProductsPage() {
                 <p style={{ fontSize: "12px", fontWeight: 800, color: "var(--ink-primary)" }}>MATCHA KYOTO PERDANA 4RQ</p>
                 <p style={{ fontSize: "10px", color: "var(--ink-muted)" }}>NMID: ID1026582264820 · PNTNK BR</p>
                 <span style={{ fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", backgroundColor: "#dcfce7", color: "#15803d", fontWeight: 700, marginTop: "4px", display: "inline-block" }}>
-                  🟢 QRIS Aktif
+                   QRIS Aktif
                 </span>
               </div>
             </div>

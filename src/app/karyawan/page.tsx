@@ -100,6 +100,14 @@ export default function KaryawanPage() {
     reader.readAsDataURL(file);
   }
 
+  function handleRetakePhoto() {
+    setQrisProofUrl("");
+    if (fileInputRef.current) {
+      fileInputRef.current.value = "";
+      fileInputRef.current.click();
+    }
+  }
+
   function finalize() {
     const tx: Transaction = {
       id: crypto.randomUUID(),
@@ -562,6 +570,16 @@ export default function KaryawanPage() {
           <div className="modal-sheet">
             <div className="drag-handle" />
 
+            {/* Hidden persistent Camera Input */}
+            <input
+              ref={fileInputRef}
+              type="file"
+              accept="image/*"
+              capture="environment"
+              onChange={handleQrisProofUpload}
+              style={{ display: "none" }}
+            />
+
             {/* Step: Pilih Metode Pembayaran */}
             {checkoutStep === "method" && (
               <>
@@ -760,18 +778,10 @@ export default function KaryawanPage() {
                 </div>
 
                 {/* Upload proof button */}
-                <input
-                  ref={fileInputRef}
-                  type="file"
-                  accept="image/*"
-                  capture="environment"
-                  onChange={handleQrisProofUpload}
-                  style={{ display: "none" }}
-                />
                 <button
                   type="button"
                   className="btn-primary"
-                  onClick={() => fileInputRef.current?.click()}
+                  onClick={handleRetakePhoto}
                 >
                   <Camera size={18} weight="bold" />
                   <span>Foto Bukti Pembayaran</span>
@@ -809,7 +819,7 @@ export default function KaryawanPage() {
                 <div style={{ display: "flex", gap: "10px" }}>
                   <button
                     type="button"
-                    onClick={() => { setQrisProofUrl(""); fileInputRef.current?.click(); }}
+                    onClick={handleRetakePhoto}
                     style={{
                       flex: 1, padding: "12px", borderRadius: "var(--r-pill)",
                       border: "1.5px solid var(--surface-border)", backgroundColor: "var(--surface)",
