@@ -6,7 +6,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import type { AppState, Product, Transaction, Employee, Expense, ShiftReport } from "./types";
+import type { AppState, Product, Transaction, Employee, Expense, ShiftReport, AttendanceRecord, OutletLocation } from "./types";
 
 const STORAGE_KEY = "matcha-kyoto-data-v3";
 const STORAGE_KEY_V2 = "matcha-kyoto-data-v2"; // used for migration
@@ -45,11 +45,21 @@ const DEFAULT_EMPLOYEES: Employee[] = [
   },
 ];
 
+export const DEFAULT_OUTLET_LOCATION: OutletLocation = {
+  latitude: -0.026330,
+  longitude: 109.342503,
+  radiusMeters: 100,
+  isEnabled: true,
+  addressName: "Outlet 4rq Cashier - Pontianak",
+};
+
 const INITIAL_STATE: AppState = {
   products: DEFAULT_PRODUCTS,
   transactions: [],
   expenses: [],
   shiftReports: [],
+  attendanceRecords: [],
+  outletLocation: DEFAULT_OUTLET_LOCATION,
   qrisImageUrl: "",
   session: null,
   employees: DEFAULT_EMPLOYEES,
@@ -72,6 +82,10 @@ type Action =
   | { type: "DELETE_EXPENSE"; payload: string }
   | { type: "CLOSE_SHIFT"; payload: ShiftReport }
   | { type: "DELETE_SHIFT_REPORT"; payload: string }
+  | { type: "SET_OUTLET_LOCATION"; payload: OutletLocation }
+  | { type: "RECORD_CLOCK_IN"; payload: AttendanceRecord }
+  | { type: "RECORD_CLOCK_OUT"; payload: { employeeId: string; clockOut: number } }
+  | { type: "DELETE_ATTENDANCE_RECORD"; payload: string }
   | { type: "HYDRATE"; payload: Partial<AppState> };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -86,6 +100,8 @@ function reducer(state: AppState, action: Action): AppState {
         employees: action.payload.employees && action.payload.employees.length > 0 ? action.payload.employees : DEFAULT_EMPLOYEES,
         expenses: action.payload.expenses ?? [],
         shiftReports: action.payload.shiftReports ?? [],
+        attendanceRecords: action.payload.attendanceRecords ?? [],
+        outletLocation: action.payload.outletLocation ?? DEFAULT_OUTLET_LOCATION,
       };
     case "LOGIN":
       return {
@@ -161,6 +177,33 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         shiftReports: (state.shiftReports || []).filter((sr) => sr.id !== action.payload),
       };
+    case "SET_OUTLET_LOCATION":
+      return {
+        ...state,
+        outletLocation: action.payload,
+      };
+    case "RECORD_CLOCK_IN":
+      return {
+        ...state,
+        attendanceRecords: [action.payload, ...(state.attendanceRecords || [])],
+      };
+    case "RECORD_CLOCK_OUT": {
+      const records = (state.attendanceRecords || []).map((rec) => {
+        if (rec.employeeId === action.payload.employeeId && !rec.clockOut) {
+          return { ...rec, clockOut: action.payload.clockOut };
+        }
+        return rec;
+      });
+      return {
+        ...state,
+        attendanceRecords: records,
+      };
+    }
+    case "DELETE_ATTENDANCE_RECORD":
+      return {
+        ...state,
+        attendanceRecords: (state.attendanceRecords || []).filter((r) => r.id !== action.payload),
+      };
     default:
       return state;
   }
@@ -200,6 +243,8 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             transactions: saved.transactions ?? [],
             expenses: saved.expenses ?? [],
             shiftReports: saved.shiftReports ?? [],
+            attendanceRecords: saved.attendanceRecords ?? [],
+            outletLocation: saved.outletLocation ?? DEFAULT_OUTLET_LOCATION,
             qrisImageUrl: saved.qrisImageUrl ?? "",
             employees: saved.employees ?? DEFAULT_EMPLOYEES,
             session: saved.session ?? null,

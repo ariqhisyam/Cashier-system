@@ -3,7 +3,9 @@ import { useState } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import Image from "next/image";
-import { User, ShieldCheck, ArrowRight, Key, Sparkle } from "@phosphor-icons/react";
+import { User, ShieldCheck, ArrowRight, Key, Sparkle, MapPin, SpinnerGap } from "@phosphor-icons/react";
+import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
+import type { AttendanceRecord, Employee } from "@/lib/types";
 
 export default function LoginPage() {
   const { state, dispatch } = useStore();
@@ -11,8 +13,9 @@ export default function LoginPage() {
   const [selectedRole, setSelectedRole] = useState<"karyawan" | "admin">("karyawan");
   const [password, setPassword] = useState("");
   const [error, setError] = useState("");
+  const [isVerifyingLocation, setIsVerifyingLocation] = useState(false);
 
-  function handleLogin() {
+  async function handleLogin() {
     setError("");
 
     if (selectedRole === "admin") {
@@ -26,6 +29,7 @@ export default function LoginPage() {
     }
 
     // Role Karyawan
+    let targetEmployee: Employee | null = null;
     const matchedEmployee = state.employees.find(
       (emp) => emp.key.trim().toLowerCase() === password.trim().toLowerCase()
     );
@@ -35,25 +39,73 @@ export default function LoginPage() {
         setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
         return;
       }
-      dispatch({ type: "LOGIN", payload: { role: "karyawan", employee: matchedEmployee } });
-      router.push("/karyawan");
+      targetEmployee = matchedEmployee;
+    } else if (password === "kyoto123") {
+      targetEmployee = { id: "default", name: "Kasir Utama", key: "kyoto123", createdAt: Date.now(), isActive: true };
+    }
+
+    if (!targetEmployee) {
+      setError("Kunci akses karyawan tidak ditemukan atau salah.");
       return;
     }
 
-    // Fallback default password
-    if (password === "kyoto123") {
-      dispatch({
-        type: "LOGIN",
-        payload: {
-          role: "karyawan",
-          employee: { id: "default", name: "Kasir Utama", key: "kyoto123", createdAt: Date.now(), isActive: true },
-        },
-      });
-      router.push("/karyawan");
-      return;
+    // Geofencing Check if enabled
+    const locationConfig = state.outletLocation;
+    if (locationConfig?.isEnabled) {
+      setIsVerifyingLocation(true);
+      try {
+        const coords = await getCurrentPositionAsync();
+        const distance = calculateDistanceMeters(
+          coords.latitude,
+          coords.longitude,
+          locationConfig.latitude,
+          locationConfig.longitude
+        );
+
+        if (distance > locationConfig.radiusMeters) {
+          setIsVerifyingLocation(false);
+          setError(
+            `📍 Lokasi Anda di luar area outlet (Jarak: ${distance}m dari toko). Presensi kasir hanya diizinkan dalam radius ${locationConfig.radiusMeters}m dari outlet.`
+          );
+          return;
+        }
+
+        // Record clock-in attendance
+        const attendance: AttendanceRecord = {
+          id: crypto.randomUUID(),
+          employeeId: targetEmployee.id,
+          employeeName: targetEmployee.name,
+          clockIn: Date.now(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          distanceMeters: distance,
+          dateString: new Date().toISOString().split("T")[0],
+        };
+        dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
+      } catch (err: unknown) {
+        setIsVerifyingLocation(false);
+        const errorMsg = err instanceof Error ? err.message : "Gagal memverifikasi lokasi GPS.";
+        setError(errorMsg);
+        return;
+      }
+      setIsVerifyingLocation(false);
+    } else {
+      // If geofencing disabled, record basic clock-in
+      const attendance: AttendanceRecord = {
+        id: crypto.randomUUID(),
+        employeeId: targetEmployee.id,
+        employeeName: targetEmployee.name,
+        clockIn: Date.now(),
+        latitude: locationConfig?.latitude ?? 0,
+        longitude: locationConfig?.longitude ?? 0,
+        distanceMeters: 0,
+        dateString: new Date().toISOString().split("T")[0],
+      };
+      dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
     }
 
-    setError("Kunci akses karyawan tidak ditemukan atau salah.");
+    dispatch({ type: "LOGIN", payload: { role: "karyawan", employee: targetEmployee } });
+    router.push("/karyawan");
   }
 
   const activeEmployeesCount = state.employees.filter((e) => e.isActive).length;
@@ -337,26 +389,45 @@ export default function LoginPage() {
           </div>
 
           {error && (
-            <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 600 }}>
-              {error}
-            </p>
+            <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--r-md)", padding: "10px 12px" }}>
+              <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 600, lineHeight: 1.4 }}>
+                {error}
+              </p>
+            </div>
           )}
         </div>
+
+        {/* Geofencing indicator for employees */}
+        {selectedRole === "karyawan" && state.outletLocation?.isEnabled && (
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", fontSize: "11px", color: "var(--ink-muted)", marginTop: "-6px" }}>
+            <MapPin size={14} color="var(--primary)" weight="fill" />
+            <span>Presensi GPS Aktif (Radius: {state.outletLocation.radiusMeters}m dari outlet)</span>
+          </div>
+        )}
 
         {/* Login Action Button */}
         <button
           type="button"
           className="btn-primary"
           onClick={handleLogin}
+          disabled={isVerifyingLocation}
           style={{ marginTop: "4px" }}
         >
-          <span>Masuk ke {selectedRole === "admin" ? "Admin" : "Kasir"}</span>
-          <ArrowRight size={18} weight="bold" />
+          {isVerifyingLocation ? (
+            <>
+              <SpinnerGap size={18} className="animate-spin" />
+              <span>Memverifikasi Lokasi Outlet...</span>
+            </>
+          ) : (
+            <>
+              <span>Masuk ke {selectedRole === "admin" ? "Admin" : "Kasir"}</span>
+              <ArrowRight size={18} weight="bold" />
+            </>
+          )}
         </button>
 
 
         </div>
       </div>
-
   );
 }

@@ -188,6 +188,10 @@ export default function KaryawanPage() {
       notes: shiftNotes.trim() || undefined,
     };
 
+    dispatch({
+      type: "RECORD_CLOCK_OUT",
+      payload: { employeeId: state.activeEmployee?.id || "default", clockOut: Date.now() },
+    });
     dispatch({ type: "CLOSE_SHIFT", payload: report });
     router.replace("/");
   }

@@ -70,11 +70,33 @@ export interface ShiftReport {
   notes?: string;
 }
 
+export interface AttendanceRecord {
+  id: string;
+  employeeId: string;
+  employeeName: string;
+  clockIn: number; // epoch ms
+  clockOut?: number; // epoch ms
+  latitude: number;
+  longitude: number;
+  distanceMeters: number;
+  dateString: string; // e.g. "2026-09-01"
+}
+
+export interface OutletLocation {
+  latitude: number;
+  longitude: number;
+  radiusMeters: number;
+  isEnabled: boolean;
+  addressName?: string;
+}
+
 export interface AppState {
   products: Product[];
   transactions: Transaction[];
   expenses: Expense[];
   shiftReports: ShiftReport[];
+  attendanceRecords: AttendanceRecord[];
+  outletLocation: OutletLocation;
   qrisImageUrl: string;
   session: "admin" | "karyawan" | null;
   employees: Employee[];
