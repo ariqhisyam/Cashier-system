@@ -9,6 +9,7 @@ import {
   useUpdateUser,
   useDeleteUser,
 } from "./useUsers";
+import { useGeofence, useUpdateGeofence } from "./useGeofence";
 
 const PAGE_SIZE = 4;
 
@@ -31,20 +32,18 @@ export function useAdminEmployees() {
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
-  // Geofencing state
-  const [geoEnabled, setGeoEnabled] = useState(state.outletLocation?.isEnabled ?? true);
-  const [geoAddress, setGeoAddress] = useState(
-    state.outletLocation?.addressName ?? "Outlet 4rq Cashier - Pontianak"
-  );
-  const [geoLat, setGeoLat] = useState(
-    String(state.outletLocation?.latitude ?? -0.02633)
-  );
-  const [geoLng, setGeoLng] = useState(
-    String(state.outletLocation?.longitude ?? 109.342503)
-  );
-  const [geoRadius, setGeoRadius] = useState(
-    state.outletLocation?.radiusMeters ?? 100
-  );
+  // Backend Geofence Query & Mutation
+  const { data: geofenceData, isLoading: isLoadingGeofence } = useGeofence({
+    enabled: state.session === "admin",
+  });
+  const updateGeofenceMutation = useUpdateGeofence();
+
+  // Geofencing form state
+  const [geoEnabled, setGeoEnabled] = useState(true);
+  const [geoAddress, setGeoAddress] = useState("Outlet 4rq Cashier - Pontianak");
+  const [geoLat, setGeoLat] = useState("-0.026330");
+  const [geoLng, setGeoLng] = useState("109.342503");
+  const [geoRadius, setGeoRadius] = useState(100);
   const [isGettingGps, setIsGettingGps] = useState(false);
 
   // Guard session
@@ -54,18 +53,20 @@ export function useAdminEmployees() {
     }
   }, [state.session, router]);
 
-  // Sync outlet location state
+  // Sync geofencing state from backend data
   useEffect(() => {
-    if (state.outletLocation) {
-      setGeoEnabled(state.outletLocation.isEnabled);
-      setGeoAddress(
-        state.outletLocation.addressName ?? "Outlet 4rq Cashier - Pontianak"
-      );
-      setGeoLat(String(state.outletLocation.latitude));
-      setGeoLng(String(state.outletLocation.longitude));
-      setGeoRadius(state.outletLocation.radiusMeters);
+    if (geofenceData) {
+      setGeoEnabled(geofenceData.isEnabled);
+      setGeoAddress(geofenceData.addressName || "Outlet 4rq Cashier - Pontianak");
+      setGeoLat(String(geofenceData.latitude));
+      setGeoLng(String(geofenceData.longitude));
+      setGeoRadius(geofenceData.radiusMeters);
+      dispatch({
+        type: "SET_OUTLET_LOCATION",
+        payload: geofenceData,
+      });
     }
-  }, [state.outletLocation]);
+  }, [geofenceData, dispatch]);
 
   // Handle search change & reset page
   function handleSearchChange(query: string) {
@@ -186,7 +187,7 @@ export function useAdminEmployees() {
     }
   }
 
-  function handleSaveGeofencing() {
+  async function handleSaveGeofencing() {
     const lat = parseFloat(geoLat);
     const lng = parseFloat(geoLng);
     if (isNaN(lat) || isNaN(lng)) {
@@ -200,8 +201,14 @@ export function useAdminEmployees() {
       isEnabled: geoEnabled,
       addressName: geoAddress.trim() || "Outlet 4rq Cashier",
     };
-    dispatch({ type: "SET_OUTLET_LOCATION", payload: updatedLocation });
-    showToast("✅ Pengaturan Lokasi Outlet & Geofencing berhasil disimpan!");
+
+    try {
+      await updateGeofenceMutation.mutateAsync(updatedLocation);
+      dispatch({ type: "SET_OUTLET_LOCATION", payload: updatedLocation });
+      showToast("✅ Pengaturan Lokasi Outlet & Geofencing berhasil disimpan ke backend!");
+    } catch (err: any) {
+      showToast(`⚠️ Gagal menyimpan geofencing: ${err.message}`);
+    }
   }
 
   function handleDeleteAttendance(id: string) {
@@ -258,6 +265,8 @@ export function useAdminEmployees() {
     isGettingGps,
     handleGetCurrentGps,
     handleSaveGeofencing,
+    isSavingGeofence: updateGeofenceMutation.isPending,
+    isLoadingGeofence,
     // Attendance
     attendanceRecords: state.attendanceRecords || [],
     handleDeleteAttendance,

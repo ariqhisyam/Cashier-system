@@ -23,6 +23,7 @@ interface GeofencingTabProps {
   isGettingGps: boolean;
   onGetCurrentGps: () => void;
   onSaveGeofencing: () => void;
+  isSavingGeofence?: boolean;
 }
 
 export default function GeofencingTab({
@@ -31,14 +32,15 @@ export default function GeofencingTab({
   geoAddress,
   setGeoAddress,
   geoLat,
-  setGeoLng,
-  geoLng,
   setGeoLat,
+  geoLng,
+  setGeoLng,
   geoRadius,
   setGeoRadius,
   isGettingGps,
   onGetCurrentGps,
   onSaveGeofencing,
+  isSavingGeofence = false,
 }: GeofencingTabProps) {
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: "14px" }}>
@@ -208,10 +210,24 @@ export default function GeofencingTab({
         <button
           type="button"
           onClick={onSaveGeofencing}
+          disabled={isSavingGeofence}
           className="btn-primary"
-          style={{ marginTop: "4px" }}
+          style={{
+            marginTop: "4px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+          }}
         >
-          Simpan Pengaturan Geofencing
+          {isSavingGeofence ? (
+            <>
+              <SpinnerGap size={16} className="animate-spin" />
+              <span>Menyimpan ke Backend...</span>
+            </>
+          ) : (
+            <span>Simpan Pengaturan Geofencing</span>
+          )}
         </button>
       </div>
     </div>

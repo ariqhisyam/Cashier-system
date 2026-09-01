@@ -57,6 +57,7 @@ export default function AdminEmployeesPage() {
     isGettingGps,
     handleGetCurrentGps,
     handleSaveGeofencing,
+    isSavingGeofence,
     // Attendance
     attendanceRecords,
     handleDeleteAttendance,
@@ -154,6 +155,7 @@ export default function AdminEmployeesPage() {
               isGettingGps={isGettingGps}
               onGetCurrentGps={handleGetCurrentGps}
               onSaveGeofencing={handleSaveGeofencing}
+              isSavingGeofence={isSavingGeofence}
             />
           )}
 

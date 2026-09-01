@@ -3,6 +3,7 @@ export * from "./useUsers";
 export * from "./useAdminEmployees";
 export * from "./useKaryawanCashier";
 export * from "./useQris";
+export * from "./useGeofence";
 export * from "./useStorage";
 export * from "./useAdminProducts";
 export * from "./useAddProductForm";

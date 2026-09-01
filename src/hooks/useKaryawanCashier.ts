@@ -10,6 +10,7 @@ import type {
 } from "@/lib/types";
 import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
 import { useProducts } from "./useProducts";
+import { useGeofence } from "./useGeofence";
 
 export type PaymentMethod = "cash" | "qris";
 export type CheckoutStep = "method" | "cash" | "qris" | "qris_proof";
@@ -30,10 +31,17 @@ export function useKaryawanCashier() {
     { enabled: state.session === "karyawan" }
   );
 
+  // Fetch geofence settings dynamically from backend
+  const { data: geofenceSetting } = useGeofence({
+    enabled: state.session === "karyawan",
+  });
+
   const products: Product[] =
     productsData?.products && productsData.products.length > 0
       ? productsData.products
       : state.products;
+
+  const currentOutletLocation = geofenceSetting || state.outletLocation;
 
   // Cart state
   const [cart, setCart] = useState<CartItem[]>([]);
@@ -209,7 +217,7 @@ export function useKaryawanCashier() {
     setAbsenError("");
     setIsAbsenLoading(true);
 
-    const locationConfig = state.outletLocation;
+    const locationConfig = currentOutletLocation;
     const employeeId = state.activeEmployee?.id || "default";
     const employeeName = state.activeEmployee?.name || "Kasir";
 
@@ -388,7 +396,7 @@ export function useKaryawanCashier() {
     setAbsenError,
     absenSuccessToast,
     handleDoClockIn,
-    outletLocation: state.outletLocation,
+    outletLocation: currentOutletLocation,
     // Close Shift
     showCloseShiftModal,
     setShowCloseShiftModal,
