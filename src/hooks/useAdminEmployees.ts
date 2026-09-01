@@ -10,6 +10,7 @@ import {
   useDeleteUser,
 } from "./useUsers";
 import { useGeofence, useUpdateGeofence } from "./useGeofence";
+import { useAttendances, useDeleteAttendance } from "./useAttendance";
 
 const PAGE_SIZE = 4;
 
@@ -35,6 +36,10 @@ export function useAdminEmployees() {
   // Backend Geofence Query & Mutation
   const { data: geofenceData, isLoading: isLoadingGeofence } = useGeofence();
   const updateGeofenceMutation = useUpdateGeofence();
+
+  // Backend Attendance Query & Mutation
+  const { data: attendancesData } = useAttendances({ limit: 100 });
+  const deleteAttendanceMutation = useDeleteAttendance();
 
   // Geofencing form state
   const [geoEnabled, setGeoEnabled] = useState(true);
@@ -201,15 +206,34 @@ export function useAdminEmployees() {
     }
   }
 
-  function handleDeleteAttendance(id: string) {
+  async function handleDeleteAttendance(id: string) {
     if (confirm("Hapus catatan presensi ini?")) {
-      dispatch({ type: "DELETE_ATTENDANCE_RECORD", payload: id });
-      showToast("Catatan presensi dihapus.");
+      try {
+        await deleteAttendanceMutation.mutateAsync(id);
+        dispatch({ type: "DELETE_ATTENDANCE_RECORD", payload: id });
+        showToast("Catatan presensi berhasil dihapus dari database.");
+      } catch (err: any) {
+        showToast(`⚠️ Gagal menghapus catatan presensi: ${err.message}`);
+      }
     }
   }
 
+  // Map backend attendance list to AttendanceRecord model
+  const liveAttendanceRecords = attendancesData?.items
+    ? attendancesData.items.map((att) => ({
+        id: att.id,
+        employeeId: att.userId || "default",
+        employeeName: att.userName,
+        clockIn: new Date(att.clockIn).getTime(),
+        clockOut: att.clockOut ? new Date(att.clockOut).getTime() : undefined,
+        latitude: att.latitude || 0,
+        longitude: att.longitude || 0,
+        distanceMeters: att.distanceMeters || 0,
+        dateString: new Date(att.clockIn).toISOString().split("T")[0],
+      }))
+    : state.attendanceRecords || [];
+
   return {
-    isAuthorized: state.session === "admin",
     activeTab,
     setActiveTab,
     users,
@@ -258,7 +282,7 @@ export function useAdminEmployees() {
     isSavingGeofence: updateGeofenceMutation.isPending,
     isLoadingGeofence,
     // Attendance
-    attendanceRecords: state.attendanceRecords || [],
+    attendanceRecords: liveAttendanceRecords,
     handleDeleteAttendance,
   };
 }

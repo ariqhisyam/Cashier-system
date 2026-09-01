@@ -182,7 +182,8 @@ export default function KaryawanHistoryPage() {
       payload: { employeeId: state.activeEmployee?.id || "default", clockOut: Date.now() },
     });
     dispatch({ type: "CLOSE_SHIFT", payload: report });
-    router.replace("/");
+    setShowCloseShiftModal(false);
+    setShiftNotes("");
   }
 
   return (

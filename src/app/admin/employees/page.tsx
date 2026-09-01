@@ -14,7 +14,6 @@ import { CheckCircle } from "@phosphor-icons/react";
 
 export default function AdminEmployeesPage() {
   const {
-    isAuthorized,
     activeTab,
     setActiveTab,
     users,
@@ -62,8 +61,6 @@ export default function AdminEmployeesPage() {
     attendanceRecords,
     handleDeleteAttendance,
   } = useAdminEmployees();
-
-  if (!isAuthorized) return null;
 
   return (
     <div className="page-root">

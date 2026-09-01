@@ -186,7 +186,7 @@ export default function CloseShiftModal({
         >
           <p style={{ fontSize: "11px", color: "#92400e", lineHeight: 1.4 }}>
             ℹ️ Laporan shift harian akan otomatis dikirim dan tersimpan ke{" "}
-            <strong>Admin History</strong>. Sesi kasir Anda akan otomatis keluar setelah
+            <strong>Admin History</strong>. Anda tetap berada di aplikasi kasir setelah
             penutupan shift.
           </p>
         </div>

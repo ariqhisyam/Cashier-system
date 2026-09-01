@@ -57,7 +57,7 @@ export default function LoginPage() {
         }}
       >
         <Image
-          src="/matcha-latte.jpg"
+          src="https://llyeovbymplgfalfxbrd.supabase.co/storage/v1/object/public/Cashier-system-img/products/25ea66fc-e203-405f-9484-8783069a9bd4.webp"
           alt="Matcha Kyoto Cafe"
           fill
           priority

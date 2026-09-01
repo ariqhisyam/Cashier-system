@@ -169,8 +169,6 @@ function reducer(state: AppState, action: Action): AppState {
       return {
         ...state,
         shiftReports: [action.payload, ...(state.shiftReports || [])],
-        session: null,
-        activeEmployee: null,
       };
     case "DELETE_SHIFT_REPORT":
       return {

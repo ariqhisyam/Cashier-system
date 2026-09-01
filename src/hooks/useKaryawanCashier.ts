@@ -1,4 +1,4 @@
-import { useState, useEffect, useRef } from "react";
+import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import type {
@@ -11,7 +11,15 @@ import type {
 import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
 import { useProducts } from "./useProducts";
 import { useGeofence } from "./useGeofence";
+import { useQris } from "./useQris";
 import { useLogout } from "./useAuth";
+import { useUploadStorage } from "./useStorage";
+import { useCreateTransaction } from "./useTransactions";
+import {
+  useActiveAttendance,
+  useClockInAttendance,
+  useClockOutAttendance,
+} from "./useAttendance";
 
 export type PaymentMethod = "cash" | "qris";
 export type CheckoutStep = "method" | "cash" | "qris" | "qris_proof";
@@ -26,6 +34,11 @@ export function useKaryawanCashier() {
   const { state, dispatch } = useStore();
   const router = useRouter();
   const logoutMutation = useLogout();
+  const uploadStorageMutation = useUploadStorage();
+  const createTransactionMutation = useCreateTransaction();
+  const { data: liveActiveAttendance } = useActiveAttendance();
+  const clockInMutation = useClockInAttendance();
+  const clockOutMutation = useClockOutAttendance();
 
   // Fetch products from backend or fallback to store
   const { data: productsData } = useProducts({
@@ -37,6 +50,9 @@ export function useKaryawanCashier() {
 
   // Fetch geofence settings dynamically from backend
   const { data: geofenceSetting } = useGeofence();
+
+  // Fetch active QRIS image URL dynamically from backend
+  const { data: qrisSettingUrl } = useQris();
 
   const products: Product[] =
     productsData?.products && productsData.products.length > 0
@@ -54,6 +70,7 @@ export function useKaryawanCashier() {
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>("cash");
   const [cashInput, setCashInput] = useState("");
   const [qrisProofUrl, setQrisProofUrl] = useState("");
+  const [isUploadingProof, setIsUploadingProof] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
 
@@ -68,18 +85,48 @@ export function useKaryawanCashier() {
   const [absenError, setAbsenError] = useState("");
   const [absenSuccessToast, setAbsenSuccessToast] = useState<string | null>(null);
 
-  // Session guard
-  useEffect(() => {
-    if (state.session !== "karyawan") {
-      router.replace("/");
-    }
-  }, [state.session, router]);
+  // Derived active attendance from Neon PostgreSQL database or local state
+  const activeAttendance: AttendanceRecord | undefined = liveActiveAttendance
+    ? {
+        id: liveActiveAttendance.id,
+        employeeId: liveActiveAttendance.userId || state.activeEmployee?.id || "default",
+        employeeName: liveActiveAttendance.userName,
+        clockIn: new Date(liveActiveAttendance.clockIn).getTime(),
+        clockOut: liveActiveAttendance.clockOut
+          ? new Date(liveActiveAttendance.clockOut).getTime()
+          : undefined,
+        latitude: liveActiveAttendance.latitude || 0,
+        longitude: liveActiveAttendance.longitude || 0,
+        distanceMeters: liveActiveAttendance.distanceMeters || 0,
+        dateString: new Date(liveActiveAttendance.clockIn).toISOString().split("T")[0],
+      }
+    : (state.attendanceRecords || []).find((rec) => {
+        const isThisEmp = rec.employeeId === (state.activeEmployee?.id || "default");
+        const now = new Date();
+        const isSameDay = (ts: number, ref: Date) => {
+          const d = new Date(ts);
+          return (
+            d.getFullYear() === ref.getFullYear() &&
+            d.getMonth() === ref.getMonth() &&
+            d.getDate() === ref.getDate()
+          );
+        };
+        return isThisEmp && isSameDay(rec.clockIn, now) && !rec.clockOut;
+      });
 
   function getQty(productId: string) {
     return cart.find((c) => c.productId === productId)?.quantity ?? 0;
   }
 
   function adjustCart(productId: string, delta: number) {
+    // ENFORCE MANDATORY CLOCK-IN RULE:
+    // If cashier has not clocked in yet, block adding items and open AttendanceModal
+    if (delta > 0 && !activeAttendance) {
+      setAbsenError("⚠️ Anda belum absen masuk! Silakan lakukan presensi masuk terlebih dahulu.");
+      setShowAttendanceModal(true);
+      return;
+    }
+
     const product = products.find((p) => p.id === productId);
     if (!product) return;
     setCart((prev) => {
@@ -119,19 +166,37 @@ export function useKaryawanCashier() {
   }
 
   function handleCashConfirm() {
-    if (!cashIsEnough) return;
+    if (!cashIsEnough || createTransactionMutation.isPending) return;
     finalize();
   }
 
-  function handleQrisProofUpload(e: React.ChangeEvent<HTMLInputElement>) {
+  async function handleQrisProofUpload(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0];
     if (!file) return;
+
+    // Show immediate local preview
     const reader = new FileReader();
     reader.onload = (ev) => {
       setQrisProofUrl(ev.target?.result as string);
       setCheckoutStep("qris_proof");
     };
     reader.readAsDataURL(file);
+
+    // Upload to Supabase Object Storage bucket in background
+    try {
+      setIsUploadingProof(true);
+      const res = await uploadStorageMutation.mutateAsync({
+        file,
+        folder: "qris_proofs",
+      });
+      if (res?.url) {
+        setQrisProofUrl(res.url);
+      }
+    } catch (err) {
+      console.error("Gagal mengunggah foto bukti ke Supabase Storage:", err);
+    } finally {
+      setIsUploadingProof(false);
+    }
   }
 
   function handleRetakePhoto() {
@@ -143,31 +208,51 @@ export function useKaryawanCashier() {
   }
 
   function finalize() {
-    const tx: Transaction = {
-      id: crypto.randomUUID(),
-      timestamp: Date.now(),
-      total,
-      cashierId: state.activeEmployee?.id,
-      cashierName: state.activeEmployee?.name || "Kasir Utama",
-      paymentMethod,
+    if (cart.length === 0 || createTransactionMutation.isPending) return;
+
+    const payload = {
+      items: cart.map((c) => ({
+        productId: c.productId,
+        quantity: c.quantity,
+      })),
+      paymentMethod: (paymentMethod === "cash" ? "CASH" : "QRIS") as "CASH" | "QRIS",
       cashPaid: paymentMethod === "cash" ? cashPaid : undefined,
-      changeAmount: paymentMethod === "cash" ? changeAmount : undefined,
       qrisProofUrl: paymentMethod === "qris" ? qrisProofUrl : undefined,
-      items: cart.map((c) => {
-        const p = products.find((pr) => pr.id === c.productId)!;
-        return {
-          name: p.name,
-          quantity: c.quantity,
-          price: p.price,
-          subtotal: p.price * c.quantity,
-        };
-      }),
     };
-    dispatch({ type: "ADD_TRANSACTION", payload: tx });
-    setLastTransaction(tx);
-    setCart([]);
-    setShowCheckout(false);
-    setShowReceipt(true);
+
+    createTransactionMutation.mutate(payload, {
+      onSuccess: (savedTx) => {
+        const tx: Transaction = {
+          id: savedTx.id,
+          timestamp: new Date(savedTx.createdAt).getTime(),
+          total: savedTx.total,
+          cashierId: savedTx.cashierId || state.activeEmployee?.id,
+          cashierName: savedTx.cashierName || state.activeEmployee?.name || "Kasir Utama",
+          paymentMethod: savedTx.paymentMethod === "CASH" ? "cash" : "qris",
+          cashPaid: savedTx.cashPaid ?? (paymentMethod === "cash" ? cashPaid : undefined),
+          changeAmount: savedTx.changeAmount ?? (paymentMethod === "cash" ? changeAmount : undefined),
+          qrisProofUrl: savedTx.qrisProofUrl ?? (paymentMethod === "qris" ? qrisProofUrl : undefined),
+          items: savedTx.items.map((item) => ({
+            name: item.productName,
+            quantity: item.quantity,
+            price: item.price,
+            subtotal: item.subtotal,
+          })),
+        };
+
+        dispatch({ type: "ADD_TRANSACTION", payload: tx });
+        setLastTransaction(tx);
+        setCart([]);
+        setShowCheckout(false);
+        setShowReceipt(true);
+      },
+      onError: (err: any) => {
+        alert(
+          err?.message ||
+            "Gagal menyimpan transaksi. Silakan periksa stok produk atau koneksi server."
+        );
+      },
+    });
   }
 
   const now = new Date();
@@ -209,26 +294,20 @@ export function useKaryawanCashier() {
     .filter((tx) => tx.paymentMethod === "qris")
     .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
 
-  // Active attendance record for this employee today
-  const activeAttendance = (state.attendanceRecords || []).find((rec) => {
-    const isThisEmp = rec.employeeId === (state.activeEmployee?.id || "default");
-    return isThisEmp && isSameDay(rec.clockIn, now) && !rec.clockOut;
-  });
-
   async function handleDoClockIn() {
     setAbsenError("");
     setIsAbsenLoading(true);
 
     const locationConfig = currentOutletLocation;
-    const employeeId = state.activeEmployee?.id || "default";
-    const employeeName = state.activeEmployee?.name || "Kasir";
+    let coords: { latitude?: number; longitude?: number } = {};
 
     if (locationConfig?.isEnabled) {
       try {
-        const coords = await getCurrentPositionAsync();
+        const gps = await getCurrentPositionAsync();
+        coords = { latitude: gps.latitude, longitude: gps.longitude };
         const distance = calculateDistanceMeters(
-          coords.latitude,
-          coords.longitude,
+          gps.latitude,
+          gps.longitude,
           locationConfig.latitude,
           locationConfig.longitude
         );
@@ -240,25 +319,6 @@ export function useKaryawanCashier() {
           );
           return;
         }
-
-        const attendance: AttendanceRecord = {
-          id: crypto.randomUUID(),
-          employeeId,
-          employeeName,
-          clockIn: Date.now(),
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          distanceMeters: distance,
-          dateString: new Date().toISOString().split("T")[0],
-        };
-        dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
-        setAbsenSuccessToast(
-          `✅ Presensi Masuk Berhasil (${formatTimeOnly(
-            attendance.clockIn
-          )} WIB · ${distance}m dari toko)`
-        );
-        setTimeout(() => setAbsenSuccessToast(null), 3000);
-        setShowAttendanceModal(false);
       } catch (err: unknown) {
         setIsAbsenLoading(false);
         const msg =
@@ -266,25 +326,32 @@ export function useKaryawanCashier() {
         setAbsenError(msg);
         return;
       }
-    } else {
+    }
+
+    try {
+      const saved = await clockInMutation.mutateAsync(coords);
+      const clockInTime = new Date(saved.clockIn).getTime();
       const attendance: AttendanceRecord = {
-        id: crypto.randomUUID(),
-        employeeId,
-        employeeName,
-        clockIn: Date.now(),
-        latitude: locationConfig?.latitude ?? 0,
-        longitude: locationConfig?.longitude ?? 0,
-        distanceMeters: 0,
-        dateString: new Date().toISOString().split("T")[0],
+        id: saved.id,
+        employeeId: saved.userId || state.activeEmployee?.id || "default",
+        employeeName: saved.userName,
+        clockIn: clockInTime,
+        latitude: saved.latitude || 0,
+        longitude: saved.longitude || 0,
+        distanceMeters: saved.distanceMeters || 0,
+        dateString: new Date(saved.clockIn).toISOString().split("T")[0],
       };
       dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
       setAbsenSuccessToast(
-        `✅ Presensi Masuk Berhasil (${formatTimeOnly(attendance.clockIn)} WIB)`
+        `✅ Presensi Masuk Berhasil (${formatTimeOnly(clockInTime)} WIB · ${saved.distanceMeters}m dari toko)`
       );
       setTimeout(() => setAbsenSuccessToast(null), 3000);
       setShowAttendanceModal(false);
+    } catch (err: any) {
+      setAbsenError(err?.message || "Gagal mencatat presensi masuk ke server.");
+    } finally {
+      setIsAbsenLoading(false);
     }
-    setIsAbsenLoading(false);
   }
 
   function handleConfirmCloseShift() {
@@ -340,6 +407,9 @@ export function useKaryawanCashier() {
       notes: shiftNotes.trim() || undefined,
     };
 
+    // Automatically record clock out on backend
+    clockOutMutation.mutate({});
+
     dispatch({
       type: "RECORD_CLOCK_OUT",
       payload: {
@@ -348,7 +418,11 @@ export function useKaryawanCashier() {
       },
     });
     dispatch({ type: "CLOSE_SHIFT", payload: report });
-    router.replace("/");
+    setShowCloseShiftModal(false);
+    setShiftNotes("");
+    setCart([]);
+    setAbsenSuccessToast("✅ Tutup Shift Berhasil! Laporan shift telah tercatat.");
+    setTimeout(() => setAbsenSuccessToast(null), 3500);
   }
 
   function handleLogout() {
@@ -356,7 +430,6 @@ export function useKaryawanCashier() {
   }
 
   return {
-    isAuthorized: state.session === "karyawan",
     activeEmployee: state.activeEmployee,
     products,
     cart,
@@ -377,6 +450,8 @@ export function useKaryawanCashier() {
     changeAmount,
     cashIsEnough,
     qrisProofUrl,
+    isUploadingProof,
+    isSubmitting: createTransactionMutation.isPending,
     fileInputRef,
     openCheckout,
     handleSelectMethod,
@@ -387,7 +462,7 @@ export function useKaryawanCashier() {
     showReceipt,
     setShowReceipt,
     lastTransaction,
-    qrisImageUrl: state.qrisImageUrl || "/qris.jpg",
+    qrisImageUrl: qrisSettingUrl || state.qrisImageUrl || "/qris.jpg",
     // Attendance
     activeAttendance,
     showAttendanceModal,

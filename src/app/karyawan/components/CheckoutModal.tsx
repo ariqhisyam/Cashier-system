@@ -31,6 +31,8 @@ interface CheckoutModalProps {
   onRetakePhoto: () => void;
   onFinalize: () => void;
   onClose: () => void;
+  isSubmitting?: boolean;
+  isUploadingProof?: boolean;
 }
 
 export default function CheckoutModal({
@@ -53,6 +55,8 @@ export default function CheckoutModal({
   onRetakePhoto,
   onFinalize,
   onClose,
+  isSubmitting = false,
+  isUploadingProof = false,
 }: CheckoutModalProps) {
   return (
     <div className="modal-overlay">
@@ -394,10 +398,10 @@ export default function CheckoutModal({
               type="button"
               className="btn-primary"
               onClick={onCashConfirm}
-              disabled={!cashIsEnough}
-              style={{ opacity: cashIsEnough ? 1 : 0.5 }}
+              disabled={!cashIsEnough || isSubmitting}
+              style={{ opacity: cashIsEnough && !isSubmitting ? 1 : 0.5 }}
             >
-              Selesai &amp; Cetak Struk
+              {isSubmitting ? "Memproses Transaksi..." : "Selesai & Cetak Struk"}
             </button>
           </>
         )}
@@ -503,12 +507,13 @@ export default function CheckoutModal({
                 alignItems: "center",
                 justifyContent: "center",
                 gap: "6px",
-                cursor: "pointer",
+                cursor: isUploadingProof ? "not-allowed" : "pointer",
+                opacity: isUploadingProof ? 0.7 : 1,
                 width: "100%",
               }}
             >
               <Camera size={18} weight="bold" />
-              <span>Foto Bukti Pembayaran</span>
+              <span>{isUploadingProof ? "Mengunggah Bukti..." : "Foto Bukti Pembayaran"}</span>
             </label>
           </>
         )}
@@ -551,7 +556,7 @@ export default function CheckoutModal({
             >
               <CheckCircle size={18} color="#16a34a" weight="fill" />
               <p style={{ fontSize: "13px", fontWeight: 700, color: "#16a34a" }}>
-                Bukti pembayaran berhasil diupload
+                {isUploadingProof ? "Sedang mengunggah foto ke storage..." : "Bukti pembayaran berhasil dipilih"}
               </p>
             </div>
 
@@ -577,6 +582,7 @@ export default function CheckoutModal({
               <button
                 type="button"
                 onClick={onRetakePhoto}
+                disabled={isSubmitting || isUploadingProof}
                 style={{
                   flex: 1,
                   padding: "12px",
@@ -586,7 +592,7 @@ export default function CheckoutModal({
                   fontSize: "13px",
                   fontWeight: 700,
                   color: "var(--ink-primary)",
-                  cursor: "pointer",
+                  cursor: isSubmitting || isUploadingProof ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -598,9 +604,14 @@ export default function CheckoutModal({
                 type="button"
                 className="btn-primary"
                 onClick={onFinalize}
-                style={{ flex: 2 }}
+                disabled={isSubmitting || isUploadingProof}
+                style={{
+                  flex: 2,
+                  opacity: isSubmitting || isUploadingProof ? 0.7 : 1,
+                  cursor: isSubmitting || isUploadingProof ? "not-allowed" : "pointer",
+                }}
               >
-                Selesai &amp; Cetak Struk
+                {isSubmitting ? "Menyimpan Transaksi..." : "Selesai & Cetak Struk"}
               </button>
             </div>
           </>

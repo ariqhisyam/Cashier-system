@@ -31,10 +31,7 @@ export default function AdminProductsPage() {
     setShowAddForm,
     handleDelete,
     isDeleting,
-    isAuthorized,
   } = useAdminProducts();
-
-  if (!isAuthorized) return null;
 
   return (
     <div className="page-root">

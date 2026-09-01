@@ -12,7 +12,6 @@ import CloseShiftModal from "./components/CloseShiftModal";
 
 export default function KaryawanPage() {
   const {
-    isAuthorized,
     activeEmployee,
     products,
     cart,
@@ -31,6 +30,8 @@ export default function KaryawanPage() {
     changeAmount,
     cashIsEnough,
     qrisProofUrl,
+    isUploadingProof,
+    isSubmitting,
     fileInputRef,
     openCheckout,
     handleSelectMethod,
@@ -63,8 +64,6 @@ export default function KaryawanPage() {
     handleConfirmCloseShift,
     handleLogout,
   } = useKaryawanCashier();
-
-  if (!isAuthorized) return null;
 
   return (
     <div className="page-root">
@@ -116,6 +115,8 @@ export default function KaryawanPage() {
           onRetakePhoto={handleRetakePhoto}
           onFinalize={finalize}
           onClose={() => setShowCheckout(false)}
+          isSubmitting={isSubmitting}
+          isUploadingProof={isUploadingProof}
         />
       )}
 

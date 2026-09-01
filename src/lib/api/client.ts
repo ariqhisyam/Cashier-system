@@ -14,6 +14,16 @@ export interface ApiResponse<T = any> {
   timestamp: string;
 }
 
+export interface PaginatedResponse<T> {
+  items: T[];
+  meta: {
+    total: number;
+    page: number;
+    limit: number;
+    totalPages: number;
+  };
+}
+
 export const apiClient = axios.create({
   baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
   headers: {
@@ -21,6 +31,17 @@ export const apiClient = axios.create({
   },
   withCredentials: true,
   timeout: 15000,
+});
+
+// Attach Authorization header if access token exists in localStorage (dual strategy with HttpOnly cookies)
+apiClient.interceptors.request.use((config) => {
+  if (typeof window !== "undefined") {
+    const token = localStorage.getItem("matcha_access_token");
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    }
+  }
+  return config;
 });
 
 // Interceptor to unwrap data and handle error messages cleanly

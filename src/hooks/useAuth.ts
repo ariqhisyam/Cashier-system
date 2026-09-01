@@ -11,6 +11,29 @@ export const AUTH_KEYS = {
 };
 
 const USER_PROFILE_STORAGE_KEY = "matcha_auth_profile_v1";
+const AUTH_TOKEN_STORAGE_KEY = "matcha_access_token";
+
+export function getStoredAuthToken(): string | null {
+  if (typeof window === "undefined") return null;
+  try {
+    return localStorage.getItem(AUTH_TOKEN_STORAGE_KEY);
+  } catch {
+    return null;
+  }
+}
+
+export function setStoredAuthToken(token: string | null): void {
+  if (typeof window === "undefined") return;
+  try {
+    if (token) {
+      localStorage.setItem(AUTH_TOKEN_STORAGE_KEY, token);
+    } else {
+      localStorage.removeItem(AUTH_TOKEN_STORAGE_KEY);
+    }
+  } catch {
+    // ignore
+  }
+}
 
 export function getStoredAuthUser(): AuthUser | null {
   if (typeof window === "undefined") return null;
@@ -51,6 +74,7 @@ export function useCurrentUser() {
         setStoredAuthUser(user);
         return user;
       } catch (err) {
+        setStoredAuthToken(null);
         setStoredAuthUser(null);
         throw err;
       }
@@ -83,6 +107,7 @@ export function useCurrentUser() {
         });
       }
     } else if (query.isError) {
+      setStoredAuthToken(null);
       setStoredAuthUser(null);
       dispatch({ type: "LOGOUT" });
     }
@@ -111,6 +136,9 @@ export function useLogin() {
   return useMutation({
     mutationFn: (params: LoginParams) => loginAuth(params),
     onSuccess: (user: AuthUser) => {
+      if (user.token) {
+        setStoredAuthToken(user.token);
+      }
       setStoredAuthUser(user);
       queryClient.setQueryData(AUTH_KEYS.me, user);
       if (user.role === "ADMIN") {
@@ -148,6 +176,7 @@ export function useLogout() {
   return useMutation({
     mutationFn: () => logoutAuth(),
     onSuccess: () => {
+      setStoredAuthToken(null);
       setStoredAuthUser(null);
       queryClient.setQueryData(AUTH_KEYS.me, null);
       queryClient.clear();
@@ -156,6 +185,7 @@ export function useLogout() {
     },
     onError: () => {
       // Even if network fails, force frontend logout
+      setStoredAuthToken(null);
       setStoredAuthUser(null);
       queryClient.setQueryData(AUTH_KEYS.me, null);
       dispatch({ type: "LOGOUT" });

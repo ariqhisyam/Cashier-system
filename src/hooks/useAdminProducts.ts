@@ -81,6 +81,5 @@ export function useAdminProducts() {
     setShowAddForm,
     handleDelete,
     isDeleting: deleteProductMutation.isPending,
-    isAuthorized: state.session === "admin",
   };
 }
