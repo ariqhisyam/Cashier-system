@@ -25,6 +25,10 @@ export interface Transaction {
   total: number;
   timestamp: number; // epoch ms
   cashierName?: string;
+  paymentMethod: "cash" | "qris";
+  cashPaid?: number;       // for cash payments
+  changeAmount?: number;   // for cash payments
+  qrisProofUrl?: string;   // for qris payments (base64 data URL)
 }
 
 export interface Employee {
@@ -33,11 +37,20 @@ export interface Employee {
   key: string;
   createdAt: number;
   isActive: boolean;
+  monthlySalary?: number; // optional, default 0
+}
+
+export interface Expense {
+  id: string;
+  description: string;
+  amount: number;
+  timestamp: number; // epoch ms
 }
 
 export interface AppState {
   products: Product[];
   transactions: Transaction[];
+  expenses: Expense[];
   qrisImageUrl: string;
   session: "admin" | "karyawan" | null;
   employees: Employee[];

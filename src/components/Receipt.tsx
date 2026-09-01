@@ -13,6 +13,8 @@ function formatDate(ts: number) {
 }
 
 export default function Receipt({ transaction, onClose }: Props) {
+  const isCash = transaction.paymentMethod === "cash";
+
   return (
     <div className="modal-overlay" onClick={onClose}>
       <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
@@ -26,43 +28,75 @@ export default function Receipt({ transaction, onClose }: Props) {
             display: "flex", alignItems: "center", justifyContent: "center",
             margin: "0 auto 12px", fontSize: 24,
           }}>✅</div>
-          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--ink)" }}>Pembayaran Berhasil</h2>
+          <h2 style={{ fontSize: 18, fontWeight: 800, color: "var(--ink-primary)" }}>Pembayaran Berhasil</h2>
           <p style={{ fontSize: 12, color: "var(--ink-muted)", marginTop: 4 }}>
-            Matcha Kyoto &middot; {formatDate(transaction.timestamp)}
+            Matcha Kyoto · {formatDate(transaction.timestamp)}
           </p>
-          <p style={{ fontSize: 11, color: "var(--primary)", fontWeight: 700, marginTop: 2 }}>
-            Kasir: {transaction.cashierName || "Kasir Utama"}
-          </p>
-          <p style={{ fontSize: 11, color: "var(--ink-muted)", fontFamily: "var(--font-geist-mono)", marginTop: 2 }}>
+          <div style={{ display: "flex", alignItems: "center", justifyContent: "center", gap: "6px", marginTop: "4px" }}>
+            <p style={{ fontSize: 11, color: "var(--primary)", fontWeight: 700 }}>
+              Kasir: {transaction.cashierName || "Kasir Utama"}
+            </p>
+            <span style={{
+              fontSize: 10, padding: "1px 7px", borderRadius: "9999px", fontWeight: 700,
+              backgroundColor: isCash ? "#f0fdf4" : "#eff6ff",
+              color: isCash ? "#16a34a" : "#2563eb",
+              border: `1px solid ${isCash ? "#86efac" : "#93c5fd"}`,
+            }}>
+              {isCash ? "💵 Cash" : "📱 QRIS"}
+            </span>
+          </div>
+          <p style={{ fontSize: 11, color: "var(--ink-muted)", fontFamily: "var(--font-geist-mono)", marginTop: 4 }}>
             #{transaction.id.slice(-6).toUpperCase()}
           </p>
         </div>
 
         {/* Items */}
-        <div style={{ background: "var(--bg)", borderRadius: "var(--r-md)", padding: "12px 14px", marginBottom: 16, display: "flex", flexDirection: "column", gap: 10 }}>
+        <div style={{ background: "var(--bg-app)", borderRadius: "var(--r-md)", padding: "12px 14px", marginBottom: 12, display: "flex", flexDirection: "column", gap: 10 }}>
           {transaction.items.map((item, i) => (
             <div key={i} style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
               <div>
-                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--ink)" }}>{item.name}</p>
+                <p style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-primary)" }}>{item.name}</p>
                 <p style={{ fontSize: 12, color: "var(--ink-muted)", marginTop: 1 }}>
-                  {item.quantity}x &times; {formatRupiah(item.price)}
+                  {item.quantity}× {formatRupiah(item.price)}
                 </p>
               </div>
-              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink)" }}>{formatRupiah(item.subtotal)}</span>
+              <span style={{ fontSize: 13, fontWeight: 700, color: "var(--ink-primary)" }}>{formatRupiah(item.subtotal)}</span>
             </div>
           ))}
         </div>
 
-        {/* Total */}
-        <div style={{
-          display: "flex", justifyContent: "space-between", alignItems: "center",
-          padding: "14px 16px",
-          background: "var(--primary)", borderRadius: "var(--r-md)",
-          marginBottom: 20,
-        }}>
-          <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: 600 }}>Total Pembayaran</span>
-          <span style={{ color: "#fff", fontSize: 20, fontWeight: 800 }}>{formatRupiah(transaction.total)}</span>
+        {/* Total + Cash Info */}
+        <div style={{ borderRadius: "var(--r-md)", overflow: "hidden", marginBottom: 16 }}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "12px 14px", backgroundColor: "var(--primary)" }}>
+            <span style={{ color: "rgba(255,255,255,0.8)", fontSize: 14, fontWeight: 600 }}>Total Pembayaran</span>
+            <span style={{ color: "#fff", fontSize: 18, fontWeight: 800 }}>{formatRupiah(transaction.total)}</span>
+          </div>
+          {isCash && transaction.cashPaid !== undefined && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", backgroundColor: "#f0fdf4" }}>
+                <span style={{ color: "#166534", fontSize: 13, fontWeight: 600 }}>Uang Diterima</span>
+                <span style={{ color: "#16a34a", fontSize: 14, fontWeight: 700 }}>{formatRupiah(transaction.cashPaid)}</span>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", padding: "10px 14px", backgroundColor: "#dcfce7" }}>
+                <span style={{ color: "#166534", fontSize: 13, fontWeight: 700 }}>Kembalian</span>
+                <span style={{ color: "#16a34a", fontSize: 16, fontWeight: 800 }}>{formatRupiah(transaction.changeAmount ?? 0)}</span>
+              </div>
+            </>
+          )}
         </div>
+
+        {/* QRIS Proof */}
+        {!isCash && transaction.qrisProofUrl && (
+          <div style={{ marginBottom: 16 }}>
+            <p style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-secondary)", marginBottom: 6 }}>Bukti Pembayaran QRIS</p>
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src={transaction.qrisProofUrl}
+              alt="Bukti QRIS"
+              style={{ width: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "var(--r-md)", border: "1px solid var(--surface-border)", backgroundColor: "#f8fafc" }}
+            />
+          </div>
+        )}
 
         <button className="btn-primary" onClick={onClose}>Tutup Struk</button>
       </div>

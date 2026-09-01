@@ -6,16 +6,17 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import type { AppState, Product, Transaction, Employee } from "./types";
+import type { AppState, Product, Transaction, Employee, Expense } from "./types";
 
-const STORAGE_KEY = "matcha-kyoto-data-v2";
+const STORAGE_KEY = "matcha-kyoto-data-v3";
+const STORAGE_KEY_V2 = "matcha-kyoto-data-v2"; // used for migration
 
 const DEFAULT_PRODUCTS: Product[] = [
-  { id: "1", name: "Matcha Latte", price: 28000, stock: 20, imageUrl: "/matcha-latte.jpg", rawMaterialCost: 12000 },
-  { id: "2", name: "Hojicha Latte", price: 25000, stock: 20, imageUrl: "/hojicha-latte.jpg", rawMaterialCost: 10000 },
-  { id: "3", name: "Matcha Cake", price: 35000, stock: 15, imageUrl: "/matcha-cake.jpg", rawMaterialCost: 18000 },
-  { id: "4", name: "Matcha Ice Cream", price: 22000, stock: 25, imageUrl: "/matcha-ice-cream.jpg", rawMaterialCost: 9000 },
-  { id: "5", name: "Matcha Cookie", price: 18000, stock: 30, imageUrl: "/matcha-cookie.jpg", rawMaterialCost: 7000 },
+  { id: "1", name: "Pink Berry",   price: 17000, stock: 50, imageUrl: "/matcha-latte.jpg",    rawMaterialCost: 6419 },
+  { id: "2", name: "Matcha",       price: 15000, stock: 50, imageUrl: "/hojicha-latte.jpg",  rawMaterialCost: 5033 },
+  { id: "3", name: "Matcha Latte", price: 17000, stock: 50, imageUrl: "/matcha-cake.jpg",    rawMaterialCost: 6540 },
+  { id: "4", name: "Seasalt",      price: 20000, stock: 50, imageUrl: "/matcha-ice-cream.jpg", rawMaterialCost: 9423 },
+  { id: "5", name: "Coconut",      price: 18000, stock: 50, imageUrl: "/matcha-cookie.jpg",  rawMaterialCost: 7832 },
 ];
 
 export function generateEmployeeKey(): string {
@@ -47,6 +48,7 @@ const DEFAULT_EMPLOYEES: Employee[] = [
 const INITIAL_STATE: AppState = {
   products: DEFAULT_PRODUCTS,
   transactions: [],
+  expenses: [],
   qrisImageUrl: "",
   session: null,
   employees: DEFAULT_EMPLOYEES,
@@ -65,6 +67,8 @@ type Action =
   | { type: "UPDATE_EMPLOYEE"; payload: Employee }
   | { type: "DELETE_EMPLOYEE"; payload: string }
   | { type: "TOGGLE_EMPLOYEE_STATUS"; payload: string }
+  | { type: "ADD_EXPENSE"; payload: Expense }
+  | { type: "DELETE_EXPENSE"; payload: string }
   | { type: "HYDRATE"; payload: Partial<AppState> };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -77,6 +81,7 @@ function reducer(state: AppState, action: Action): AppState {
         activeEmployee: action.payload.activeEmployee ?? null,
         products: action.payload.products && action.payload.products.length > 0 ? action.payload.products : DEFAULT_PRODUCTS,
         employees: action.payload.employees && action.payload.employees.length > 0 ? action.payload.employees : DEFAULT_EMPLOYEES,
+        expenses: action.payload.expenses ?? [],
       };
     case "LOGIN":
       return {
@@ -136,6 +141,10 @@ function reducer(state: AppState, action: Action): AppState {
           e.id === action.payload ? { ...e, isActive: !e.isActive } : e
         ),
       };
+    case "ADD_EXPENSE":
+      return { ...state, expenses: [action.payload, ...state.expenses] };
+    case "DELETE_EXPENSE":
+      return { ...state, expenses: state.expenses.filter((ex) => ex.id !== action.payload) };
     default:
       return state;
   }
@@ -149,10 +158,23 @@ const StoreContext = createContext<{
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
 
-  // Hydrate from localStorage on mount
+  // Hydrate from localStorage on mount (with v2→v3 migration)
   useEffect(() => {
     try {
-      const raw = localStorage.getItem(STORAGE_KEY);
+      let raw = localStorage.getItem(STORAGE_KEY);
+      if (!raw) {
+        // Migrate from v2: keep employees, transactions, expenses — reset products to new defaults
+        const v2raw = localStorage.getItem(STORAGE_KEY_V2);
+        if (v2raw) {
+          const v2data = JSON.parse(v2raw) as Partial<AppState>;
+          const migrated: Partial<AppState> = {
+            ...v2data,
+            products: DEFAULT_PRODUCTS, // always reset to new menu
+          };
+          localStorage.setItem(STORAGE_KEY, JSON.stringify(migrated));
+          raw = JSON.stringify(migrated);
+        }
+      }
       if (raw) {
         const saved = JSON.parse(raw) as Partial<AppState>;
         dispatch({
@@ -160,6 +182,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
           payload: {
             products: saved.products ?? DEFAULT_PRODUCTS,
             transactions: saved.transactions ?? [],
+            expenses: saved.expenses ?? [],
             qrisImageUrl: saved.qrisImageUrl ?? "",
             employees: saved.employees ?? DEFAULT_EMPLOYEES,
             session: saved.session ?? null,

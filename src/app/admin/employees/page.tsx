@@ -31,6 +31,7 @@ export default function AdminEmployeesPage() {
   // Modal / Form state
   const [showAddModal, setShowAddModal] = useState(false);
   const [name, setName] = useState("");
+  const [monthlySalary, setMonthlySalary] = useState("");
   const [generatedKey, setGeneratedKey] = useState("");
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [toastMessage, setToastMessage] = useState<string | null>(null);
@@ -42,6 +43,7 @@ export default function AdminEmployeesPage() {
 
   function openAddModal() {
     setName("");
+    setMonthlySalary("");
     setGeneratedKey(generateEmployeeKey());
     setShowAddModal(true);
   }
@@ -64,12 +66,14 @@ export default function AdminEmployeesPage() {
 
   function handleSaveEmployee() {
     if (!name.trim()) return;
+    const salary = parseInt(monthlySalary.replace(/\D/g, ""), 10) || 0;
     const newEmp: Employee = {
       id: crypto.randomUUID(),
       name: name.trim(),
       key: generatedKey,
       createdAt: Date.now(),
       isActive: true,
+      monthlySalary: salary > 0 ? salary : undefined,
     };
     dispatch({ type: "ADD_EMPLOYEE", payload: newEmp });
     setShowAddModal(false);
@@ -111,7 +115,7 @@ export default function AdminEmployeesPage() {
           }}
         >
           <p style={{ fontSize: "11px", color: "var(--ink-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-            Matcha Kyoto
+            4rq cashier system
           </p>
           <h1 style={{ fontSize: "20px", fontWeight: 800, color: "var(--ink-primary)", letterSpacing: "-0.5px" }}>
             Akses &amp; Karyawan
@@ -248,6 +252,12 @@ export default function AdminEmployeesPage() {
                       <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
                         Dibuat: {formatDate(emp.createdAt)}
                       </p>
+                      {emp.monthlySalary ? (
+                        <p style={{ fontSize: "11px", marginTop: "1px", color: "var(--primary)", fontWeight: 700 }}>
+                          {new Intl.NumberFormat("id-ID", { style: "currency", currency: "IDR", minimumFractionDigits: 0 }).format(emp.monthlySalary)}/bln
+                          <span style={{ color: "var(--ink-muted)", fontWeight: 500 }}>{" · Rp "}{Math.round(emp.monthlySalary / 30).toLocaleString("id-ID")}{"/hari"}</span>
+                        </p>
+                      ) : null}
                     </div>
                   </div>
 
@@ -390,6 +400,32 @@ export default function AdminEmployeesPage() {
                   className="input"
                   autoFocus
                 />
+              </div>
+
+              {/* Gaji Bulanan */}
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>
+                  Gaji Bulanan <span style={{ fontWeight: 500, color: "var(--ink-muted)" }}>(Opsional)</span>
+                </label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", fontWeight: 700, color: "var(--ink-muted)" }}>
+                    Rp
+                  </span>
+                  <input
+                    type="number"
+                    placeholder="1500000"
+                    value={monthlySalary}
+                    onChange={(e) => setMonthlySalary(e.target.value)}
+                    className="input"
+                    style={{ paddingLeft: "38px" }}
+                    min={0}
+                  />
+                </div>
+                {monthlySalary && parseInt(monthlySalary, 10) > 0 && (
+                  <p style={{ fontSize: "11px", color: "var(--primary)", fontWeight: 600, marginTop: "4px" }}>
+                    ≈ Rp {Math.round(parseInt(monthlySalary, 10) / 30).toLocaleString("id-ID")}/hari (÷30 hari)
+                  </p>
+                )}
               </div>
 
               {/* Random Key Display & Regenerate Box */}

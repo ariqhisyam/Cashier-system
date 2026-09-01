@@ -4,16 +4,24 @@ import { useRouter } from "next/navigation";
 import { useStore, formatRupiah } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import BarChart from "@/components/BarChart";
-import { SignOut, TrendUp, Money, ChartBar } from "@phosphor-icons/react";
+import { SignOut, TrendUp, Money, ChartBar, CreditCard, Coins, Plus, Trash, X, Receipt } from "@phosphor-icons/react";
 
 type ChartFilter = "harian" | "bulanan" | "tahunan";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
+function isSameDay(ts: number, ref: Date) {
+  const d = new Date(ts);
+  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+}
 
 export default function AdminPage() {
   const { state, dispatch } = useStore();
   const router = useRouter();
   const [chartFilter, setChartFilter] = useState<ChartFilter>("harian");
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseDesc, setExpenseDesc] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expensePresets] = useState(["Es Batu", "Listrik", "Gas", "Transportasi", "Lainnya"]);
 
   useEffect(() => {
     if (state.session !== "admin") router.replace("/");
@@ -22,19 +30,53 @@ export default function AdminPage() {
 
   const now = new Date();
 
-  const todayTxs = state.transactions.filter((tx) => {
-    const d = new Date(tx.timestamp);
-    return d.getFullYear() === now.getFullYear() && d.getMonth() === now.getMonth() && d.getDate() === now.getDate();
-  });
+  const todayTxs = state.transactions.filter((tx) => isSameDay(tx.timestamp, now));
 
   const grossRevenue = todayTxs.reduce((s, tx) => s + tx.total, 0);
-  const netRevenue = todayTxs.reduce((sum, tx) => {
+  const revenueAfterHpp = todayTxs.reduce((sum, tx) => {
     const cost = tx.items.reduce((s, item) => {
       const product = state.products.find((p) => p.name === item.name);
       return s + (product ? product.rawMaterialCost * item.quantity : 0);
     }, 0);
     return sum + tx.total - cost;
   }, 0);
+
+  // Daily salary cost
+  const dailySalaryCost = state.employees
+    .filter((e) => e.isActive && e.monthlySalary)
+    .reduce((s, e) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
+
+  // Today's additional expenses
+  const todayExpenses = (state.expenses ?? []).filter((ex) => isSameDay(ex.timestamp, now));
+  const totalExpenses = todayExpenses.reduce((s, ex) => s + ex.amount, 0);
+
+  // Net revenue: gross - HPP - salary - additional expenses
+  const netRevenue = revenueAfterHpp - dailySalaryCost - totalExpenses;
+
+  const cashRevenue = todayTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
+  const qrisRevenue = todayTxs.filter((tx) => tx.paymentMethod === "qris").reduce((s, tx) => s + tx.total, 0);
+  const cashCount = todayTxs.filter((tx) => tx.paymentMethod === "cash").length;
+  const qrisCount = todayTxs.filter((tx) => tx.paymentMethod === "qris").length;
+
+  const activeEmployeesWithSalary = state.employees.filter((e) => e.isActive && e.monthlySalary);
+
+  function handleAddExpense() {
+    const amount = parseInt(expenseAmount.replace(/\D/g, ""), 10);
+    if (!expenseDesc.trim() || !amount || amount <= 0) return;
+    dispatch({
+      type: "ADD_EXPENSE",
+      payload: { id: crypto.randomUUID(), description: expenseDesc.trim(), amount, timestamp: Date.now() },
+    });
+    setExpenseDesc("");
+    setExpenseAmount("");
+    setShowExpenseModal(false);
+  }
+
+  function openExpenseModal(preset?: string) {
+    setExpenseDesc(preset ?? "");
+    setExpenseAmount("");
+    setShowExpenseModal(true);
+  }
 
   function buildChartData() {
     if (chartFilter === "harian") {
@@ -86,7 +128,7 @@ export default function AdminPage() {
         >
           <div>
             <p style={{ fontSize: "11px", color: "var(--ink-muted)", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-              Matcha Kyoto
+              4rq Cashier System
             </p>
             <h1 style={{ fontSize: "20px", fontWeight: 800, color: "var(--ink-primary)", letterSpacing: "-0.5px" }}>
               Dashboard Admin
@@ -163,15 +205,113 @@ export default function AdminPage() {
             {/* Net Revenue Card */}
             <div className="stat-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}>Pendapatan Bersih</p>
+                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}>Keuntungan Bersih</p>
                 <Money size={18} color="var(--accent)" weight="fill" />
               </div>
-              <p style={{ fontSize: "16px", fontWeight: 800, color: "var(--primary)", marginTop: "6px" }}>
+              <p style={{ fontSize: "16px", fontWeight: 800, color: netRevenue >= 0 ? "var(--primary)" : "#dc2626", marginTop: "6px" }}>
                 {formatRupiah(netRevenue)}
               </p>
-              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>setelah HPP</p>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
+                setelah HPP{dailySalaryCost > 0 ? " & gaji" : ""}{totalExpenses > 0 ? " & pengeluaran" : ""}
+              </p>
+            </div>
+
+            {/* Daily Salary Cost Card — only show if any active employee has salary set */}
+            {dailySalaryCost > 0 && (
+              <div className="stat-card">
+                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}> Gaji Hari Ini</p>
+                  <p style={{ fontSize: "11px", color: "#d97706", fontWeight: 700 }}>{activeEmployeesWithSalary.length} org</p>
+                </div>
+                <p style={{ fontSize: "16px", fontWeight: 800, color: "#d97706", marginTop: "6px" }}>
+                  {formatRupiah(dailySalaryCost)}
+                </p>
+                <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>disisihkan/hari</p>
+              </div>
+            )}
+
+            {/* Additional Expenses Card */}
+            <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => openExpenseModal()}>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}> Pengeluaran</p>
+                <p style={{ fontSize: "11px", color: "#dc2626", fontWeight: 700, background: "#fee2e2", padding: "2px 7px", borderRadius: "999px" }}>+ Tambah</p>
+              </div>
+              <p style={{ fontSize: "16px", fontWeight: 800, color: totalExpenses > 0 ? "#dc2626" : "var(--ink-muted)", marginTop: "6px" }}>
+                {totalExpenses > 0 ? formatRupiah(totalExpenses) : "Rp 0"}
+              </p>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>{todayExpenses.length} item hari ini</p>
+            </div>
+
+            {/* Cash Revenue Card */}
+            <div className="stat-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}> Pendapatan Cash</p>
+                <Coins size={18} color="#16a34a" weight="fill" />
+              </div>
+              <p style={{ fontSize: "16px", fontWeight: 800, color: "#16a34a", marginTop: "6px" }}>
+                {formatRupiah(cashRevenue)}
+              </p>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>{cashCount} transaksi</p>
+            </div>
+
+            {/* QRIS Revenue Card */}
+            <div className="stat-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}> Pendapatan QRIS</p>
+                <CreditCard size={18} color="#2563eb" weight="fill" />
+              </div>
+              <p style={{ fontSize: "16px", fontWeight: 800, color: "#2563eb", marginTop: "6px" }}>
+                {formatRupiah(qrisRevenue)}
+              </p>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>{qrisCount} transaksi</p>
             </div>
           </div>
+
+          {/* Today's Expenses List */}
+          {todayExpenses.length > 0 && (
+            <div>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <h3 style={{ fontSize: "14px", fontWeight: 800, color: "var(--ink-primary)" }}>Pengeluaran Hari Ini</h3>
+                <button
+                  type="button"
+                  onClick={() => openExpenseModal()}
+                  style={{ background: "none", border: "none", color: "var(--primary)", fontSize: "12px", fontWeight: 700, cursor: "pointer", display: "flex", alignItems: "center", gap: "4px" }}
+                >
+                  <Plus size={13} weight="bold" />
+                  Tambah
+                </button>
+              </div>
+              <div style={{ display: "flex", flexDirection: "column", gap: "6px" }}>
+                {todayExpenses.map((ex) => {
+                  const d = new Date(ex.timestamp);
+                  return (
+                    <div key={ex.id} className="card" style={{ padding: "10px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                      <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                        <div style={{ width: "32px", height: "32px", borderRadius: "8px", backgroundColor: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0 }}>
+                          <Receipt size={16} color="#dc2626" weight="fill" />
+                        </div>
+                        <div>
+                          <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>{ex.description}</p>
+                          <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "1px" }}>{pad(d.getHours())}:{pad(d.getMinutes())}</p>
+                        </div>
+                      </div>
+                      <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                        <span style={{ fontSize: "14px", fontWeight: 800, color: "#dc2626" }}>{formatRupiah(ex.amount)}</span>
+                        <button
+                          type="button"
+                          onClick={() => dispatch({ type: "DELETE_EXPENSE", payload: ex.id })}
+                          style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)", display: "flex", alignItems: "center" }}
+                          title="Hapus"
+                        >
+                          <Trash size={15} />
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Sales Chart */}
           <div className="card" style={{ padding: "16px" }}>
@@ -227,11 +367,20 @@ export default function AdminPage() {
                 return (
                   <div key={tx.id} className="card" style={{ padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
-                      <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>
-                        #{tx.id.slice(-6).toUpperCase()}
-                      </p>
+                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                        <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>
+                          #{tx.id.slice(-6).toUpperCase()}
+                        </p>
+                        <span style={{
+                          fontSize: "10px", padding: "1px 5px", borderRadius: "9999px", fontWeight: 700,
+                          backgroundColor: tx.paymentMethod === "cash" ? "#f0fdf4" : "#eff6ff",
+                          color: tx.paymentMethod === "cash" ? "#16a34a" : "#2563eb",
+                        }}>
+                          {tx.paymentMethod === "cash" ? "💵" : "📱"}
+                        </span>
+                      </div>
                       <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} &middot; {tx.items.length} item
+                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} · {tx.items.length} item
                       </p>
                     </div>
                     <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--primary)" }}>
@@ -244,6 +393,83 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {/* Add Expense Modal */}
+      {showExpenseModal && (
+        <div className="modal-overlay" onClick={() => setShowExpenseModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="drag-handle" />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div>
+                <h3 style={{ fontSize: "16px", fontWeight: 800, color: "var(--ink-primary)" }}>Tambah Pengeluaran</h3>
+                <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>Catat biaya operasional harian</p>
+              </div>
+              <button type="button" onClick={() => setShowExpenseModal(false)} className="btn-icon" style={{ width: "30px", height: "30px" }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Quick presets */}
+            <div style={{ display: "flex", flexWrap: "wrap", gap: "6px", marginBottom: "14px" }}>
+              {expensePresets.map((p) => (
+                <button
+                  key={p}
+                  type="button"
+                  onClick={() => setExpenseDesc(p)}
+                  style={{
+                    padding: "5px 12px", borderRadius: "9999px", fontSize: "12px", fontWeight: 600,
+                    border: expenseDesc === p ? "none" : "1.5px solid var(--surface-border)",
+                    backgroundColor: expenseDesc === p ? "var(--ink-primary)" : "var(--surface)",
+                    color: expenseDesc === p ? "#ffffff" : "var(--ink-secondary)",
+                    cursor: "pointer", transition: "all 0.15s ease",
+                  }}
+                >
+                  {p}
+                </button>
+              ))}
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>Keterangan</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Es Batu, Listrik, dll"
+                  value={expenseDesc}
+                  onChange={(e) => setExpenseDesc(e.target.value)}
+                  className="input"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>Jumlah</label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", fontWeight: 700, color: "var(--ink-muted)" }}>Rp</span>
+                  <input
+                    type="number"
+                    placeholder="50000"
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    className="input"
+                    style={{ paddingLeft: "38px" }}
+                    min={0}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleAddExpense}
+                disabled={!expenseDesc.trim() || !expenseAmount || parseInt(expenseAmount, 10) <= 0}
+                style={{ marginTop: "4px" }}
+              >
+                <Plus size={16} weight="bold" />
+                <span>Simpan Pengeluaran</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       <BottomNav role="admin" />
     </div>

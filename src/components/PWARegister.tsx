@@ -86,20 +86,23 @@ export default function PWARegister() {
       <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
         <div
           style={{
-            width: "32px",
-            height: "32px",
+            width: "36px",
+            height: "36px",
             borderRadius: "8px",
-            backgroundColor: "var(--primary)",
+            overflow: "hidden",
             display: "flex",
             alignItems: "center",
             justifyContent: "center",
             flexShrink: 0,
+            backgroundColor: "#0d1a13",
+            border: "1px solid rgba(255,255,255,0.2)",
           }}
         >
-          <DownloadSimple size={18} color="#ffffff" weight="bold" />
+          {/* eslint-disable-next-line @next/next/no-img-element */}
+          <img src="/icon-192.png" alt="4rq POS Icon" width={36} height={36} style={{ objectFit: "cover" }} />
         </div>
         <div>
-          <p style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>Install Matcha Kyoto</p>
+          <p style={{ fontSize: "12px", fontWeight: 700, color: "#ffffff" }}>Install 4rq Cashier</p>
           <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.7)" }}>Jadikan aplikasi POS di HP Anda</p>
         </div>
       </div>

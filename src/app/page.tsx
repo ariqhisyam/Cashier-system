@@ -90,24 +90,41 @@ export default function LoginPage() {
             gap: "8px",
           }}
         >
-          <div
-            style={{
-              display: "inline-flex",
-              alignItems: "center",
-              gap: "6px",
-              padding: "4px 12px",
-              borderRadius: "9999px",
-              backgroundColor: "rgba(255, 255, 255, 0.15)",
-              backdropFilter: "blur(10px)",
-              color: "#eaf7f0",
-              fontSize: "12px",
-              fontWeight: 600,
-              width: "fit-content",
-              border: "1px solid rgba(255, 255, 255, 0.2)",
-            }}
-          >
-            <Sparkle size={14} weight="fill" color="#52b788" />
-            <span>AUTHENTIC KYOTO TASTE</span>
+          <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+            <div
+              style={{
+                width: "38px",
+                height: "38px",
+                borderRadius: "10px",
+                overflow: "hidden",
+                border: "1.5px solid rgba(255,255,255,0.3)",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                backgroundColor: "#0d1a13",
+                flexShrink: 0,
+              }}
+            >
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img src="/icon.png" alt="Logo" width={38} height={38} style={{ objectFit: "cover" }} />
+            </div>
+            <div
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                gap: "6px",
+                padding: "4px 12px",
+                borderRadius: "9999px",
+                backgroundColor: "rgba(255, 255, 255, 0.15)",
+                backdropFilter: "blur(10px)",
+                color: "#eaf7f0",
+                fontSize: "12px",
+                fontWeight: 600,
+                width: "fit-content",
+                border: "1px solid rgba(255, 255, 255, 0.2)",
+              }}
+            >
+              <Sparkle size={14} weight="fill" color="#52b788" />
+              <span>4rq Cashier System</span>
+            </div>
           </div>
 
           <h1
@@ -119,7 +136,7 @@ export default function LoginPage() {
               lineHeight: 1.2,
             }}
           >
-            Matcha Kyoto POS
+            Point Of Sale By 4rq
           </h1>
           <p style={{ color: "rgba(255,255,255,0.75)", fontSize: "13px" }}>
             Sistem Kasir &amp; Manajemen Penjualan
