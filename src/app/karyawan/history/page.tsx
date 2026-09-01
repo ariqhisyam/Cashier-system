@@ -1,11 +1,11 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useStore, formatRupiah } from "@/lib/store";
+import { useStore } from "@/lib/store";
 import type { Transaction } from "@/lib/types";
 import BottomNav from "@/components/BottomNav";
 import Receipt from "@/components/Receipt";
-import { Receipt as ReceiptIcon } from "@phosphor-icons/react";
+import { Receipt as ReceiptIcon, Coffee } from "@phosphor-icons/react";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 function isSameDay(ts: number, ref: Date) {
@@ -29,9 +29,15 @@ export default function KaryawanHistoryPage() {
 
   const now = new Date();
   const todayTxs = state.transactions.filter((tx) => isSameDay(tx.timestamp, now));
-  const todayRevenue = todayTxs.reduce((s, tx) => s + tx.total, 0);
-  const todayCash = todayTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
-  const todayQris = todayTxs.filter((tx) => tx.paymentMethod === "qris").reduce((s, tx) => s + tx.total, 0);
+
+  // Cup calculations
+  const todayCups = todayTxs.reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+  const todayCashCups = todayTxs
+    .filter((tx) => tx.paymentMethod === "cash")
+    .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+  const todayQrisCups = todayTxs
+    .filter((tx) => tx.paymentMethod === "qris")
+    .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
 
   return (
     <div className="page-root">
@@ -57,7 +63,7 @@ export default function KaryawanHistoryPage() {
 
         <div style={{ padding: "16px", display: "flex", flexDirection: "column", gap: "14px" }}>
 
-          {/* Today Summary Card */}
+          {/* Today Summary Card - Focused on Total Cups */}
           <div
             style={{
               backgroundColor: "var(--ink-primary)",
@@ -66,24 +72,43 @@ export default function KaryawanHistoryPage() {
               boxShadow: "0 8px 24px rgba(20,31,25,0.25)",
             }}
           >
-            <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
-              Total Pendapatan Hari Ini
-            </p>
-            <p style={{ color: "#ffffff", fontSize: "28px", fontWeight: 800, lineHeight: 1 }}>
-              {formatRupiah(todayRevenue)}
-            </p>
-            <div style={{ display: "flex", gap: "8px", marginTop: "12px" }}>
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start" }}>
+              <div>
+                <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px", marginBottom: "4px" }}>
+                  Total Cup Terjual Hari Ini
+                </p>
+                <p style={{ color: "#ffffff", fontSize: "32px", fontWeight: 800, lineHeight: 1 }}>
+                  {todayCups} <span style={{ fontSize: "16px", fontWeight: 600, color: "rgba(255,255,255,0.7)" }}>Cup</span>
+                </p>
+              </div>
+              <div
+                style={{
+                  width: "42px",
+                  height: "42px",
+                  borderRadius: "12px",
+                  backgroundColor: "rgba(255,255,255,0.1)",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  color: "#52b788",
+                }}
+              >
+                <Coffee size={24} weight="fill" />
+              </div>
+            </div>
+
+            <div style={{ display: "flex", gap: "8px", marginTop: "14px" }}>
               <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
                 <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>💵 Cash</p>
-                <p style={{ color: "#4ade80", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>{formatRupiah(todayCash)}</p>
+                <p style={{ color: "#4ade80", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>{todayCashCups} Cup</p>
               </div>
               <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
                 <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>📱 QRIS</p>
-                <p style={{ color: "#60a5fa", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>{formatRupiah(todayQris)}</p>
+                <p style={{ color: "#60a5fa", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>{todayQrisCups} Cup</p>
               </div>
               <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
                 <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>🧾 Struk</p>
-                <p style={{ color: "var(--primary)", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>{todayTxs.length}</p>
+                <p style={{ color: "var(--primary)", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>{todayTxs.length}</p>
               </div>
             </div>
           </div>
@@ -97,60 +122,63 @@ export default function KaryawanHistoryPage() {
           ) : (
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
               <p style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-muted)" }}>
-                {todayTxs.length} transaksi hari ini
+                {todayTxs.length} transaksi · {todayCups} cup hari ini
               </p>
-              {todayTxs.map((tx) => (
-                <button
-                  key={tx.id}
-                  type="button"
-                  onClick={() => setSelectedTx(tx)}
-                  className="card"
-                  style={{
-                    display: "flex",
-                    justifyContent: "space-between",
-                    alignItems: "center",
-                    padding: "14px 16px",
-                    cursor: "pointer",
-                    width: "100%",
-                    textAlign: "left",
-                    border: "1px solid var(--surface-border)",
-                    transition: "all 0.15s ease",
-                  }}
-                >
-                  <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
-                    <div
-                      style={{
-                        width: "40px", height: "40px", borderRadius: "50%",
-                        backgroundColor: "var(--primary-light)", color: "var(--primary)",
-                        display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
-                      }}
-                    >
-                      <ReceiptIcon size={20} weight="fill" />
-                    </div>
-                    <div>
-                      <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-                        <p style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink-primary)" }}>
-                          #{tx.id.slice(-6).toUpperCase()}
-                        </p>
-                        <span style={{
-                          fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", fontWeight: 700,
-                          backgroundColor: tx.paymentMethod === "cash" ? "#f0fdf4" : "#eff6ff",
-                          color: tx.paymentMethod === "cash" ? "#16a34a" : "#2563eb",
-                          border: `1px solid ${tx.paymentMethod === "cash" ? "#86efac" : "#93c5fd"}`,
-                        }}>
-                          {tx.paymentMethod === "cash" ? "💵 Cash" : "📱 QRIS"}
-                        </span>
+              {todayTxs.map((tx) => {
+                const txCups = tx.items.reduce((s, item) => s + item.quantity, 0);
+                return (
+                  <button
+                    key={tx.id}
+                    type="button"
+                    onClick={() => setSelectedTx(tx)}
+                    className="card"
+                    style={{
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      padding: "14px 16px",
+                      cursor: "pointer",
+                      width: "100%",
+                      textAlign: "left",
+                      border: "1px solid var(--surface-border)",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
+                    <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                      <div
+                        style={{
+                          width: "40px", height: "40px", borderRadius: "50%",
+                          backgroundColor: "var(--primary-light)", color: "var(--primary)",
+                          display: "flex", alignItems: "center", justifyContent: "center", flexShrink: 0,
+                        }}
+                      >
+                        <ReceiptIcon size={20} weight="fill" />
                       </div>
-                      <p style={{ fontSize: "12px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                        {formatTime(tx.timestamp)} · {tx.items.length} menu
-                      </p>
+                      <div>
+                        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                          <p style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink-primary)" }}>
+                            #{tx.id.slice(-6).toUpperCase()}
+                          </p>
+                          <span style={{
+                            fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", fontWeight: 700,
+                            backgroundColor: tx.paymentMethod === "cash" ? "#f0fdf4" : "#eff6ff",
+                            color: tx.paymentMethod === "cash" ? "#16a34a" : "#2563eb",
+                            border: `1px solid ${tx.paymentMethod === "cash" ? "#86efac" : "#93c5fd"}`,
+                          }}>
+                            {tx.paymentMethod === "cash" ? "💵 Cash" : "📱 QRIS"}
+                          </span>
+                        </div>
+                        <p style={{ fontSize: "12px", color: "var(--ink-muted)", marginTop: "2px" }}>
+                          {formatTime(tx.timestamp)} · {tx.items.map(i => `${i.name} (${i.quantity})`).join(", ")}
+                        </p>
+                      </div>
                     </div>
-                  </div>
-                  <span style={{ fontSize: "15px", fontWeight: 800, color: "var(--primary)", flexShrink: 0 }}>
-                    {formatRupiah(tx.total)}
-                  </span>
-                </button>
-              ))}
+                    <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--primary)", flexShrink: 0, marginLeft: "8px" }}>
+                      {txCups} Cup
+                    </span>
+                  </button>
+                );
+              })}
             </div>
           )}
         </div>
