@@ -33,9 +33,7 @@ export function useAdminEmployees() {
   const [toastMessage, setToastMessage] = useState<string | null>(null);
 
   // Backend Geofence Query & Mutation
-  const { data: geofenceData, isLoading: isLoadingGeofence } = useGeofence({
-    enabled: state.session === "admin",
-  });
+  const { data: geofenceData, isLoading: isLoadingGeofence } = useGeofence();
   const updateGeofenceMutation = useUpdateGeofence();
 
   // Geofencing form state
@@ -45,13 +43,6 @@ export function useAdminEmployees() {
   const [geoLng, setGeoLng] = useState("109.342503");
   const [geoRadius, setGeoRadius] = useState(100);
   const [isGettingGps, setIsGettingGps] = useState(false);
-
-  // Guard session
-  useEffect(() => {
-    if (state.session !== "admin") {
-      router.replace("/");
-    }
-  }, [state.session, router]);
 
   // Sync geofencing state from backend data
   useEffect(() => {
@@ -103,8 +94,7 @@ export function useAdminEmployees() {
       search: searchQuery,
       sortBy: "createdAt",
       sortOrder: "desc",
-    },
-    { enabled: state.session === "admin" }
+    }
   );
 
   const createUserMutation = useCreateUser();

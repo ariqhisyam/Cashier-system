@@ -71,11 +71,6 @@ export default function AdminHistoryPage() {
   const [search, setSearch] = useState("");
   const [filter, setFilter] = useState<Filter>("harian");
 
-  useEffect(() => {
-    if (state.session !== "admin") router.replace("/");
-  }, [state.session, router]);
-  if (state.session !== "admin") return null;
-
   const now = new Date();
 
   // ── Helper: HPP cost for a tx ──────────────────────────────────────────────

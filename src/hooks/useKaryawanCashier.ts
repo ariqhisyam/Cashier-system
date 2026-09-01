@@ -11,6 +11,7 @@ import type {
 import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
 import { useProducts } from "./useProducts";
 import { useGeofence } from "./useGeofence";
+import { useLogout } from "./useAuth";
 
 export type PaymentMethod = "cash" | "qris";
 export type CheckoutStep = "method" | "cash" | "qris" | "qris_proof";
@@ -24,17 +25,18 @@ export function formatTimeOnly(ts: number) {
 export function useKaryawanCashier() {
   const { state, dispatch } = useStore();
   const router = useRouter();
+  const logoutMutation = useLogout();
 
   // Fetch products from backend or fallback to store
-  const { data: productsData } = useProducts(
-    { page: 1, limit: 100, sortBy: "createdAt", sortOrder: "desc" },
-    { enabled: state.session === "karyawan" }
-  );
+  const { data: productsData } = useProducts({
+    page: 1,
+    limit: 100,
+    sortBy: "createdAt",
+    sortOrder: "desc",
+  });
 
   // Fetch geofence settings dynamically from backend
-  const { data: geofenceSetting } = useGeofence({
-    enabled: state.session === "karyawan",
-  });
+  const { data: geofenceSetting } = useGeofence();
 
   const products: Product[] =
     productsData?.products && productsData.products.length > 0
@@ -350,8 +352,7 @@ export function useKaryawanCashier() {
   }
 
   function handleLogout() {
-    dispatch({ type: "LOGOUT" });
-    router.replace("/");
+    logoutMutation.mutate();
   }
 
   return {

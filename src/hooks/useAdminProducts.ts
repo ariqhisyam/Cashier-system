@@ -14,13 +14,6 @@ export function useAdminProducts() {
   const [searchQuery, setSearchQuery] = useState("");
   const [page, setPage] = useState(1);
 
-  // Guard session
-  useEffect(() => {
-    if (state.session !== "admin") {
-      router.replace("/");
-    }
-  }, [state.session, router]);
-
   // Reset to page 1 when search query changes
   function handleSearchChange(query: string) {
     setSearchQuery(query);
@@ -34,10 +27,13 @@ export function useAdminProducts() {
     error,
     refetch,
     isPlaceholderData,
-  } = useProducts(
-    { page, limit: PAGE_SIZE, search: searchQuery, sortBy: "createdAt", sortOrder: "desc" },
-    { enabled: state.session === "admin" }
-  );
+  } = useProducts({
+    page,
+    limit: PAGE_SIZE,
+    search: searchQuery,
+    sortBy: "createdAt",
+    sortOrder: "desc",
+  });
 
   const deleteProductMutation = useDeleteProduct();
   const products = productsData?.products || [];

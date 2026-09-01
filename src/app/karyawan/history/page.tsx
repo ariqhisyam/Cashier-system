@@ -31,11 +31,6 @@ export default function KaryawanHistoryPage() {
   const [absenError, setAbsenError] = useState("");
   const [absenSuccessToast, setAbsenSuccessToast] = useState<string | null>(null);
 
-  useEffect(() => {
-    if (state.session !== "karyawan") router.replace("/");
-  }, [state.session, router]);
-  if (state.session !== "karyawan") return null;
-
   const now = new Date();
   const isSameDay = (ts: number, ref: Date) => {
     const d = new Date(ts);

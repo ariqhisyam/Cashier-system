@@ -5,6 +5,7 @@ import { useStore, formatRupiah } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import BarChart from "@/components/BarChart";
 import { SignOut, TrendUp, Money, ChartBar, CreditCard, Coins, Plus, Trash, X, Receipt } from "@phosphor-icons/react";
+import { useLogout } from "@/hooks";
 
 type ChartFilter = "harian" | "bulanan" | "tahunan";
 
@@ -17,16 +18,12 @@ function isSameDay(ts: number, ref: Date) {
 export default function AdminPage() {
   const { state, dispatch } = useStore();
   const router = useRouter();
+  const logoutMutation = useLogout();
   const [chartFilter, setChartFilter] = useState<ChartFilter>("harian");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expensePresets] = useState(["Es Batu", "Listrik", "Gas", "Transportasi", "Lainnya"]);
-
-  useEffect(() => {
-    if (state.session !== "admin") router.replace("/");
-  }, [state.session, router]);
-  if (state.session !== "admin") return null;
 
   const now = new Date();
 
@@ -137,10 +134,8 @@ export default function AdminPage() {
           <button
             type="button"
             className="btn-icon"
-            onClick={() => {
-              dispatch({ type: "LOGOUT" });
-              router.replace("/");
-            }}
+            onClick={() => logoutMutation.mutate()}
+            disabled={logoutMutation.isPending}
             title="Keluar"
           >
             <SignOut size={18} />

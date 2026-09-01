@@ -1,105 +1,61 @@
 "use client";
 import { useState } from "react";
-import { useRouter } from "next/navigation";
-import { useStore } from "@/lib/store";
 import Image from "next/image";
-import { User, ShieldCheck, ArrowRight, Key, Sparkle } from "@phosphor-icons/react";
-import type { Employee } from "@/lib/types";
-import { getUsers } from "@/lib/api/users";
+import { Key, Sparkle, ArrowRight, SpinnerGap, User, ShieldCheck } from "@phosphor-icons/react";
+import { useLogin } from "@/hooks";
+
+type RoleSelection = "karyawan" | "admin";
 
 export default function LoginPage() {
-  const { state, dispatch } = useStore();
-  const router = useRouter();
-  const [selectedRole, setSelectedRole] = useState<"karyawan" | "admin">("karyawan");
-  const [password, setPassword] = useState("");
-  const [error, setError] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [selectedRole, setSelectedRole] = useState<RoleSelection>("karyawan");
+  const [keyInput, setKeyInput] = useState("");
+  const [errorMessage, setErrorMessage] = useState("");
+  const loginMutation = useLogin();
 
-  async function handleLogin() {
-    setError("");
+  async function handleLoginSubmit(e?: React.FormEvent) {
+    if (e) e.preventDefault();
+    setErrorMessage("");
 
-    if (selectedRole === "admin") {
-      if (password !== "admin123") {
-        setError("Password Admin salah, silakan coba lagi.");
-        return;
-      }
-      dispatch({ type: "LOGIN", payload: { role: "admin" } });
-      router.push("/admin");
+    const trimmedKey = keyInput.trim();
+    if (!trimmedKey) {
+      setErrorMessage(
+        selectedRole === "admin"
+          ? "Silakan masukkan Kunci Akses Admin Anda."
+          : "Silakan masukkan Kunci Akses Karyawan Anda."
+      );
       return;
     }
 
-    // Role Karyawan
-    setIsLoggingIn(true);
-    let targetEmployee: Employee | null = null;
-
-    try {
-      // 1. Try querying backend users by key
-      const res = await getUsers({ search: password.trim() });
-      const matchedBackendUser = res.users.find(
-        (u) => u.key.trim().toLowerCase() === password.trim().toLowerCase()
-      );
-
-      if (matchedBackendUser) {
-        if (!matchedBackendUser.isActive) {
-          setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
-          setIsLoggingIn(false);
-          return;
-        }
-        targetEmployee = {
-          id: matchedBackendUser.id,
-          name: matchedBackendUser.name,
-          key: matchedBackendUser.key,
-          role: matchedBackendUser.role,
-          monthlySalary: matchedBackendUser.monthlySalary,
-          createdAt: typeof matchedBackendUser.createdAt === "number" ? matchedBackendUser.createdAt : Date.now(),
-          isActive: matchedBackendUser.isActive,
-        };
+    loginMutation.mutate(
+      {
+        key: trimmedKey,
+        role: selectedRole === "admin" ? "ADMIN" : "KARYAWAN",
+      },
+      {
+        onSuccess: () => {
+          setKeyInput("");
+        },
+        onError: (err: any) => {
+          setErrorMessage(
+            err?.message || "Kunci akses tidak valid untuk peran yang dipilih."
+          );
+        },
       }
-    } catch {
-      // Ignore backend network error, fallback to local store
-    }
-
-    // 2. Fallback to local store employees if not found on backend
-    if (!targetEmployee) {
-      const matchedEmployee = state.employees.find(
-        (emp) => emp.key.trim().toLowerCase() === password.trim().toLowerCase()
-      );
-
-      if (matchedEmployee) {
-        if (!matchedEmployee.isActive) {
-          setError("Akun kasir ini sedang dinonaktifkan oleh Admin.");
-          setIsLoggingIn(false);
-          return;
-        }
-        targetEmployee = matchedEmployee;
-      } else if (password === "kyoto123") {
-        targetEmployee = {
-          id: "default",
-          name: "Kasir Utama",
-          key: "kyoto123",
-          createdAt: Date.now(),
-          isActive: true,
-        };
-      }
-    }
-
-    setIsLoggingIn(false);
-
-    if (!targetEmployee) {
-      setError("Kunci akses karyawan tidak ditemukan atau salah.");
-      return;
-    }
-
-    dispatch({ type: "LOGIN", payload: { role: "karyawan", employee: targetEmployee } });
-    router.push("/karyawan");
+    );
   }
-
-  const activeEmployeesCount = state.employees.filter((e) => e.isActive).length;
 
   return (
     <div className="page-root">
       {/* Top Banner Image with Japanese aesthetic overlay */}
-      <div style={{ position: "relative", height: "300px", width: "100%", overflow: "hidden", flexShrink: 0 }}>
+      <div
+        style={{
+          position: "relative",
+          height: "260px",
+          width: "100%",
+          overflow: "hidden",
+          flexShrink: 0,
+        }}
+      >
         <Image
           src="/matcha-latte.jpg"
           alt="Matcha Kyoto Cafe"
@@ -112,7 +68,8 @@ export default function LoginPage() {
           style={{
             position: "absolute",
             inset: 0,
-            background: "linear-gradient(180deg, rgba(13,26,19,0.3) 0%, rgba(13,26,19,0.85) 100%)",
+            background:
+              "linear-gradient(180deg, rgba(13,26,19,0.3) 0%, rgba(13,26,19,0.9) 100%)",
           }}
         />
 
@@ -120,7 +77,7 @@ export default function LoginPage() {
         <div
           style={{
             position: "absolute",
-            bottom: "28px",
+            bottom: "20px",
             left: "20px",
             right: "20px",
             display: "flex",
@@ -131,8 +88,8 @@ export default function LoginPage() {
           <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
             <div
               style={{
-                width: "38px",
-                height: "38px",
+                width: "36px",
+                height: "36px",
                 borderRadius: "10px",
                 overflow: "hidden",
                 border: "1.5px solid rgba(255,255,255,0.3)",
@@ -142,7 +99,13 @@ export default function LoginPage() {
               }}
             >
               {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img src="/icon.png" alt="Logo" width={38} height={38} style={{ objectFit: "cover" }} />
+              <img
+                src="/icon.png"
+                alt="Logo"
+                width={36}
+                height={36}
+                style={{ objectFit: "cover" }}
+              />
             </div>
             <div
               style={{
@@ -168,7 +131,7 @@ export default function LoginPage() {
           <h1
             style={{
               color: "#ffffff",
-              fontSize: "26px",
+              fontSize: "22px",
               fontWeight: 800,
               letterSpacing: "-0.5px",
               lineHeight: 1.2,
@@ -183,60 +146,65 @@ export default function LoginPage() {
       </div>
 
       {/* Main Form Sheet */}
-      <div
+      <form
+        onSubmit={handleLoginSubmit}
         style={{
           flex: 1,
           backgroundColor: "var(--bg-app)",
-          padding: "24px 20px 32px",
+          padding: "20px 20px 32px",
           display: "flex",
           flexDirection: "column",
-          gap: "20px",
+          gap: "18px",
         }}
       >
-        {/* Role Toggle Selector */}
-        <div>
-          <label
+        {/* Role Selector Header */}
+        <div style={{ display: "flex", flexDirection: "column", gap: "10px" }}>
+          <p
             style={{
-              display: "block",
               fontSize: "12px",
               fontWeight: 700,
               color: "var(--ink-secondary)",
               textTransform: "uppercase",
               letterSpacing: "0.5px",
-              marginBottom: "10px",
             }}
           >
             Pilih Peran Masuk
-          </label>
+          </p>
 
           <div
             style={{
               display: "grid",
               gridTemplateColumns: "1fr 1fr",
-              gap: "10px",
+              gap: "12px",
             }}
           >
-            {/* Karyawan Option */}
+            {/* Karyawan Card */}
             <button
               type="button"
               onClick={() => {
                 setSelectedRole("karyawan");
-                setPassword("");
-                setError("");
+                setErrorMessage("");
               }}
               style={{
+                backgroundColor:
+                  selectedRole === "karyawan" ? "#ffffff" : "var(--surface)",
+                border:
+                  selectedRole === "karyawan"
+                    ? "2px solid #1e7048"
+                    : "1px solid var(--surface-border)",
+                borderRadius: "16px",
                 padding: "16px 14px",
-                borderRadius: "var(--r-lg)",
-                backgroundColor: selectedRole === "karyawan" ? "#ffffff" : "var(--surface-subtle)",
-                border: selectedRole === "karyawan" ? "2px solid var(--primary)" : "1.5px solid var(--surface-border)",
-                boxShadow: selectedRole === "karyawan" ? "var(--shadow-md)" : "none",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "flex-start",
                 gap: "8px",
                 cursor: "pointer",
                 textAlign: "left",
-                transition: "all 0.2s ease",
+                boxShadow:
+                  selectedRole === "karyawan"
+                    ? "0 4px 14px rgba(30, 112, 72, 0.12)"
+                    : "none",
+                transition: "all 0.15s ease",
               }}
             >
               <div
@@ -244,52 +212,65 @@ export default function LoginPage() {
                   width: "36px",
                   height: "36px",
                   borderRadius: "10px",
-                  backgroundColor: selectedRole === "karyawan" ? "var(--primary-light)" : "#e6ece8",
-                  color: selectedRole === "karyawan" ? "var(--primary)" : "var(--ink-secondary)",
+                  backgroundColor:
+                    selectedRole === "karyawan" ? "#eaf7f0" : "#f1f5f9",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  color: selectedRole === "karyawan" ? "#1e7048" : "#64748b",
                 }}
               >
-                <User size={20} weight={selectedRole === "karyawan" ? "fill" : "regular"} />
+                <User size={20} weight="fill" />
               </div>
               <div>
                 <p
                   style={{
                     fontSize: "14px",
                     fontWeight: 700,
-                    color: selectedRole === "karyawan" ? "var(--ink-primary)" : "var(--ink-secondary)",
+                    color: "var(--ink-primary)",
                   }}
                 >
                   Karyawan
                 </p>
-                <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                  {activeEmployeesCount} akun aktif
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--ink-muted)",
+                    marginTop: "2px",
+                  }}
+                >
+                  Akses Kasir &amp; Shift
                 </p>
               </div>
             </button>
 
-            {/* Admin Option */}
+            {/* Admin Card */}
             <button
               type="button"
               onClick={() => {
                 setSelectedRole("admin");
-                setPassword("");
-                setError("");
+                setErrorMessage("");
               }}
               style={{
+                backgroundColor:
+                  selectedRole === "admin" ? "#ffffff" : "var(--surface)",
+                border:
+                  selectedRole === "admin"
+                    ? "2px solid #1e7048"
+                    : "1px solid var(--surface-border)",
+                borderRadius: "16px",
                 padding: "16px 14px",
-                borderRadius: "var(--r-lg)",
-                backgroundColor: selectedRole === "admin" ? "#ffffff" : "var(--surface-subtle)",
-                border: selectedRole === "admin" ? "2px solid var(--primary)" : "1.5px solid var(--surface-border)",
-                boxShadow: selectedRole === "admin" ? "var(--shadow-md)" : "none",
                 display: "flex",
                 flexDirection: "column",
                 alignItems: "flex-start",
                 gap: "8px",
                 cursor: "pointer",
                 textAlign: "left",
-                transition: "all 0.2s ease",
+                boxShadow:
+                  selectedRole === "admin"
+                    ? "0 4px 14px rgba(30, 112, 72, 0.12)"
+                    : "none",
+                transition: "all 0.15s ease",
               }}
             >
               <div
@@ -297,26 +278,33 @@ export default function LoginPage() {
                   width: "36px",
                   height: "36px",
                   borderRadius: "10px",
-                  backgroundColor: selectedRole === "admin" ? "var(--primary-light)" : "#e6ece8",
-                  color: selectedRole === "admin" ? "var(--primary)" : "var(--ink-secondary)",
+                  backgroundColor:
+                    selectedRole === "admin" ? "#eaf7f0" : "#f1f5f9",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
+                  color: selectedRole === "admin" ? "#1e7048" : "#64748b",
                 }}
               >
-                <ShieldCheck size={20} weight={selectedRole === "admin" ? "fill" : "regular"} />
+                <ShieldCheck size={20} weight="bold" />
               </div>
               <div>
                 <p
                   style={{
                     fontSize: "14px",
                     fontWeight: 700,
-                    color: selectedRole === "admin" ? "var(--ink-primary)" : "var(--ink-secondary)",
+                    color: "var(--ink-primary)",
                   }}
                 >
                   Administrator
                 </p>
-                <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
+                <p
+                  style={{
+                    fontSize: "11px",
+                    color: "var(--ink-muted)",
+                    marginTop: "2px",
+                  }}
+                >
                   Kelola Toko &amp; Staff
                 </p>
               </div>
@@ -324,10 +312,10 @@ export default function LoginPage() {
           </div>
         </div>
 
-        {/* Password / Access Key Input Box */}
+        {/* Access Key Input */}
         <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
           <label
-            htmlFor="password-input"
+            htmlFor="key-input"
             style={{
               fontSize: "12px",
               fontWeight: 700,
@@ -336,7 +324,9 @@ export default function LoginPage() {
               letterSpacing: "0.5px",
             }}
           >
-            {selectedRole === "admin" ? "Password Administrator" : "Kunci Akses Karyawan (Random Key)"}
+            {selectedRole === "admin"
+              ? "Kunci Akses Admin *"
+              : "Kunci Akses Karyawan (Random Key) *"}
           </label>
 
           <div style={{ position: "relative" }}>
@@ -352,54 +342,80 @@ export default function LoginPage() {
               }}
             />
             <input
-              id="password-input"
-              type="text"
+              id="key-input"
+              type="password"
               placeholder={
                 selectedRole === "admin"
-                  ? "Masukkan password admin (admin123)"
-                  : "Masukkan kunci akses (contoh: MK-8842 atau kyoto123)"
+                  ? "Masukkan kunci akses admin"
+                  : "Masukkan kunci akses (contoh: MK-8842)"
               }
-              value={password}
+              value={keyInput}
               onChange={(e) => {
-                setPassword(e.target.value);
-                setError("");
+                setKeyInput(e.target.value);
+                setErrorMessage("");
               }}
-              onKeyDown={(e) => e.key === "Enter" && handleLogin()}
-              className={`input ${error ? "error" : ""}`}
+              className={`input ${errorMessage ? "error" : ""}`}
               style={{
                 paddingLeft: "42px",
-                fontFamily: selectedRole === "karyawan" ? "var(--font-geist-mono)" : "inherit",
+                fontFamily: "var(--font-geist-mono)",
+                letterSpacing: "1px",
               }}
               autoFocus
+              autoComplete="off"
             />
           </div>
 
-          {error && (
-            <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--r-md)", padding: "10px 12px" }}>
-              <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 600, lineHeight: 1.4 }}>
-                {error}
+          {errorMessage && (
+            <div
+              style={{
+                backgroundColor: "#fef2f2",
+                border: "1px solid #fecaca",
+                borderRadius: "var(--r-md)",
+                padding: "10px 12px",
+              }}
+            >
+              <p
+                style={{
+                  fontSize: "12px",
+                  color: "#dc2626",
+                  fontWeight: 600,
+                  lineHeight: 1.4,
+                }}
+              >
+                {errorMessage}
               </p>
             </div>
           )}
         </div>
 
-        {/* Login Action Button */}
+        {/* Submit Button */}
         <button
-          type="button"
+          type="submit"
           className="btn-primary"
-          onClick={handleLogin}
-          disabled={isLoggingIn}
-          style={{ marginTop: "4px" }}
+          disabled={loginMutation.isPending}
+          style={{
+            marginTop: "6px",
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            gap: "8px",
+          }}
         >
-          <span>
-            {isLoggingIn
-              ? "Memverifikasi..."
-              : `Masuk ke ${selectedRole === "admin" ? "Admin" : "Kasir"}`}
-          </span>
-          <ArrowRight size={18} weight="bold" />
+          {loginMutation.isPending ? (
+            <>
+              <SpinnerGap size={18} className="animate-spin" />
+              <span>Memverifikasi Akses...</span>
+            </>
+          ) : (
+            <>
+              <span>
+                {selectedRole === "admin" ? "Masuk ke Admin" : "Masuk ke Kasir"}
+              </span>
+              <ArrowRight size={18} weight="bold" />
+            </>
+          )}
         </button>
-
-        </div>
-      </div>
+      </form>
+    </div>
   );
 }

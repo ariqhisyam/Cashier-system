@@ -32,55 +32,74 @@ export default function CashierHeader({
       <div
         style={{
           backgroundColor: "var(--surface)",
-          padding: "20px 20px 16px",
+          padding: "16px 16px 14px",
           display: "flex",
           justifyContent: "space-between",
           alignItems: "center",
+          gap: "10px",
           borderBottom: "1px solid var(--surface-border)",
           position: "sticky",
           top: 0,
           zIndex: 20,
         }}
       >
-        <div>
-          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
-            <span
+        {/* Left Side: Brand & Title & Staff Pill */}
+        <div style={{ minWidth: 0, flex: "1 1 auto" }}>
+          <p
+            style={{
+              fontSize: "10px",
+              color: "var(--ink-muted)",
+              fontWeight: 700,
+              textTransform: "uppercase",
+              letterSpacing: "0.5px",
+              lineHeight: 1.2,
+              marginBottom: "2px",
+            }}
+          >
+            4RQ Cashier System
+          </p>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px", flexWrap: "wrap" }}>
+            <h1
               style={{
-                fontSize: "11px",
-                color: "var(--ink-muted)",
-                fontWeight: 600,
-                textTransform: "uppercase",
-                letterSpacing: "0.5px",
+                fontSize: "18px",
+                fontWeight: 800,
+                color: "var(--ink-primary)",
+                letterSpacing: "-0.5px",
+                lineHeight: 1.2,
               }}
             >
-              4rq cashier system
-            </span>
+              Pilih Menu
+            </h1>
             <span
               style={{
                 fontSize: "10px",
-                padding: "1px 6px",
+                padding: "2px 8px",
                 borderRadius: "9999px",
                 backgroundColor: "var(--primary-light)",
                 color: "var(--primary)",
                 fontWeight: 700,
+                maxWidth: "110px",
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+                display: "inline-block",
               }}
+              title={activeEmployee?.name || "Kasir"}
             >
               {activeEmployee?.name || "Kasir"}
             </span>
           </div>
-          <h1
-            style={{
-              fontSize: "20px",
-              fontWeight: 800,
-              color: "var(--ink-primary)",
-              letterSpacing: "-0.5px",
-            }}
-          >
-            Pilih Menu
-          </h1>
         </div>
 
-        <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+        {/* Right Side Action Buttons */}
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: "6px",
+            flexShrink: 0,
+          }}
+        >
           {/* Tombol Absen */}
           <button
             type="button"
@@ -90,18 +109,20 @@ export default function CashierHeader({
               color: activeAttendance ? "#16a34a" : "var(--primary)",
               border: `1px solid ${activeAttendance ? "#86efac" : "#a7f3d0"}`,
               borderRadius: "var(--r-pill)",
-              padding: "6px 10px",
+              padding: "6px 9px",
               fontSize: "11px",
               fontWeight: 700,
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
               gap: "4px",
               cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
               transition: "all 0.15s ease",
             }}
             title="Presensi / Absensi Karyawan"
           >
-            <MapPin size={14} weight="fill" />
+            <MapPin size={13} weight="fill" />
             <span>
               {activeAttendance
                 ? `${formatTimeOnly(activeAttendance.clockIn)}`
@@ -118,18 +139,20 @@ export default function CashierHeader({
               color: "#dc2626",
               border: "1px solid #fca5a5",
               borderRadius: "var(--r-pill)",
-              padding: "6px 10px",
+              padding: "6px 9px",
               fontSize: "11px",
               fontWeight: 700,
-              display: "flex",
+              display: "inline-flex",
               alignItems: "center",
               gap: "4px",
               cursor: "pointer",
+              whiteSpace: "nowrap",
+              flexShrink: 0,
               transition: "all 0.15s ease",
             }}
             title="Tutup Shift Operasional"
           >
-            <ClockAfternoon size={14} weight="bold" />
+            <ClockAfternoon size={13} weight="bold" />
             <span>Tutup Shift</span>
           </button>
 
@@ -139,9 +162,13 @@ export default function CashierHeader({
             className="btn-icon"
             onClick={onLogout}
             title="Keluar"
-            style={{ width: "32px", height: "32px" }}
+            style={{
+              width: "30px",
+              height: "30px",
+              flexShrink: 0,
+            }}
           >
-            <SignOut size={16} />
+            <SignOut size={15} />
           </button>
         </div>
       </div>
@@ -196,6 +223,7 @@ export default function CashierHeader({
               fontSize: "11px",
               fontWeight: 700,
               cursor: "pointer",
+              whiteSpace: "nowrap",
             }}
           >
             Absen Sekarang
