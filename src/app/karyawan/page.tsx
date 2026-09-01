@@ -2,14 +2,21 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Plus, Minus, SignOut, ShoppingCart, X, Money, QrCode, Camera, CheckCircle, ClockAfternoon, NotePencil } from "@phosphor-icons/react";
+import { Plus, Minus, SignOut, ShoppingCart, X, Money, QrCode, Camera, CheckCircle, ClockAfternoon, NotePencil, MapPin, Clock, SpinnerGap, Compass } from "@phosphor-icons/react";
 import { useStore, formatRupiah } from "@/lib/store";
-import type { CartItem, Transaction, ShiftReport } from "@/lib/types";
+import type { CartItem, Transaction, ShiftReport, AttendanceRecord } from "@/lib/types";
+import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
 import BottomNav from "@/components/BottomNav";
 import Receipt from "@/components/Receipt";
 
 type PaymentMethod = "cash" | "qris";
 type CheckoutStep = "method" | "cash" | "qris" | "qris_proof";
+
+function formatTimeOnly(ts: number) {
+  const d = new Date(ts);
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function KaryawanPage() {
   const { state, dispatch } = useStore();
@@ -25,6 +32,12 @@ export default function KaryawanPage() {
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   const [shiftNotes, setShiftNotes] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Attendance state
+  const [showAttendanceModal, setShowAttendanceModal] = useState(false);
+  const [isAbsenLoading, setIsAbsenLoading] = useState(false);
+  const [absenError, setAbsenError] = useState("");
+  const [absenSuccessToast, setAbsenSuccessToast] = useState<string | null>(null);
 
   useEffect(() => {
     if (state.session !== "karyawan") router.replace("/");
@@ -146,6 +159,77 @@ export default function KaryawanPage() {
     .filter((tx) => tx.paymentMethod === "qris")
     .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
 
+  // Active attendance record for this employee today
+  const activeAttendance = (state.attendanceRecords || []).find((rec) => {
+    const isThisEmp = rec.employeeId === (state.activeEmployee?.id || "default");
+    return isThisEmp && isSameDay(rec.clockIn, now) && !rec.clockOut;
+  });
+
+  async function handleDoClockIn() {
+    setAbsenError("");
+    setIsAbsenLoading(true);
+
+    const locationConfig = state.outletLocation;
+    const employeeId = state.activeEmployee?.id || "default";
+    const employeeName = state.activeEmployee?.name || "Kasir";
+
+    if (locationConfig?.isEnabled) {
+      try {
+        const coords = await getCurrentPositionAsync();
+        const distance = calculateDistanceMeters(
+          coords.latitude,
+          coords.longitude,
+          locationConfig.latitude,
+          locationConfig.longitude
+        );
+
+        if (distance > locationConfig.radiusMeters) {
+          setIsAbsenLoading(false);
+          setAbsenError(
+            `📍 Anda berada di luar area outlet (Jarak: ${distance}m dari toko). Batas radius presensi: ${locationConfig.radiusMeters}m.`
+          );
+          return;
+        }
+
+        const attendance: AttendanceRecord = {
+          id: crypto.randomUUID(),
+          employeeId,
+          employeeName,
+          clockIn: Date.now(),
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+          distanceMeters: distance,
+          dateString: new Date().toISOString().split("T")[0],
+        };
+        dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
+        setAbsenSuccessToast(`✅ Presensi Masuk Berhasil (${formatTimeOnly(attendance.clockIn)} WIB · ${distance}m dari toko)`);
+        setTimeout(() => setAbsenSuccessToast(null), 3000);
+        setShowAttendanceModal(false);
+      } catch (err: unknown) {
+        setIsAbsenLoading(false);
+        const msg = err instanceof Error ? err.message : "Gagal mengambil lokasi GPS.";
+        setAbsenError(msg);
+        return;
+      }
+    } else {
+      const attendance: AttendanceRecord = {
+        id: crypto.randomUUID(),
+        employeeId,
+        employeeName,
+        clockIn: Date.now(),
+        latitude: locationConfig?.latitude ?? 0,
+        longitude: locationConfig?.longitude ?? 0,
+        distanceMeters: 0,
+        dateString: new Date().toISOString().split("T")[0],
+      };
+      dispatch({ type: "RECORD_CLOCK_IN", payload: attendance });
+      setAbsenSuccessToast(`✅ Presensi Masuk Berhasil (${formatTimeOnly(attendance.clockIn)} WIB)`);
+      setTimeout(() => setAbsenSuccessToast(null), 3000);
+      setShowAttendanceModal(false);
+    }
+    setIsAbsenLoading(false);
+  }
+
   function handleConfirmCloseShift() {
     const shiftGross = shiftTxs.reduce((s, tx) => s + tx.total, 0);
     const shiftCash = shiftTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
@@ -227,7 +311,35 @@ export default function KaryawanPage() {
             </h1>
           </div>
 
-          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+          <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+            {/* Tombol Absen */}
+            <button
+              type="button"
+              onClick={() => {
+                setAbsenError("");
+                setShowAttendanceModal(true);
+              }}
+              style={{
+                backgroundColor: activeAttendance ? "#f0fdf4" : "var(--primary-light)",
+                color: activeAttendance ? "#16a34a" : "var(--primary)",
+                border: `1px solid ${activeAttendance ? "#86efac" : "#a7f3d0"}`,
+                borderRadius: "var(--r-pill)",
+                padding: "6px 10px",
+                fontSize: "11px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              title="Presensi / Absensi Karyawan"
+            >
+              <MapPin size={14} weight="fill" />
+              <span>{activeAttendance ? `${formatTimeOnly(activeAttendance.clockIn)}` : "Absen"}</span>
+            </button>
+
+            {/* Tombol Tutup Shift */}
             <button
               type="button"
               onClick={() => setShowCloseShiftModal(true)}
@@ -236,7 +348,7 @@ export default function KaryawanPage() {
                 color: "#dc2626",
                 border: "1px solid #fca5a5",
                 borderRadius: "var(--r-pill)",
-                padding: "6px 12px",
+                padding: "6px 10px",
                 fontSize: "11px",
                 fontWeight: 700,
                 display: "flex",
@@ -259,11 +371,60 @@ export default function KaryawanPage() {
                 router.replace("/");
               }}
               title="Keluar"
+              style={{ width: "32px", height: "32px" }}
             >
-              <SignOut size={18} />
+              <SignOut size={16} />
             </button>
           </div>
         </div>
+
+        {/* Toast Absen Sukses */}
+        {absenSuccessToast && (
+          <div style={{ backgroundColor: "#15803d", color: "#ffffff", padding: "10px 16px", fontSize: "12px", fontWeight: 700, display: "flex", alignItems: "center", gap: "8px", animation: "fadeIn 0.2s ease" }}>
+            <CheckCircle size={18} weight="fill" />
+            <span>{absenSuccessToast}</span>
+          </div>
+        )}
+
+        {/* Reminder Banner jika belum absen */}
+        {!activeAttendance && (
+          <div
+            style={{
+              backgroundColor: "#fffbeb",
+              borderBottom: "1px solid #fde68a",
+              padding: "8px 16px",
+              display: "flex",
+              justifyContent: "space-between",
+              alignItems: "center",
+            }}
+          >
+            <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+              <Clock size={14} color="#d97706" weight="bold" />
+              <p style={{ fontSize: "11px", color: "#92400e", fontWeight: 600 }}>
+                Belum absen masuk shift ini
+              </p>
+            </div>
+            <button
+              type="button"
+              onClick={() => {
+                setAbsenError("");
+                setShowAttendanceModal(true);
+              }}
+              style={{
+                backgroundColor: "var(--primary)",
+                color: "#ffffff",
+                border: "none",
+                borderRadius: "var(--r-pill)",
+                padding: "3px 10px",
+                fontSize: "11px",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              Absen Sekarang
+            </button>
+          </div>
+        )}
 
         {/* Menu grid */}
         <div style={{ padding: "16px", display: "grid", gridTemplateColumns: "1fr 1fr", gap: "12px", paddingBottom: "100px" }}>
@@ -788,6 +949,114 @@ export default function KaryawanPage() {
                 <span>Konfirmasi Tutup Shift</span>
               </button>
             </div>
+          </div>
+        </div>
+      )}
+
+      {/* Attendance / Presensi Modal */}
+      {showAttendanceModal && (
+        <div className="modal-overlay" onClick={() => setShowAttendanceModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="drag-handle" />
+
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ width: "34px", height: "34px", borderRadius: "10px", backgroundColor: "var(--primary-light)", display: "flex", alignItems: "center", justifyContent: "center", color: "var(--primary)" }}>
+                  <MapPin size={20} weight="fill" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 800, color: "var(--ink-primary)" }}>
+                    Presensi Kehadiran Kasir
+                  </h3>
+                  <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>
+                    {state.activeEmployee?.name || "Kasir"} · {new Date().toLocaleDateString("id-ID", { weekday: "long", day: "numeric", month: "short", year: "numeric" })}
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowAttendanceModal(false)}
+                className="btn-icon"
+                style={{ width: "30px", height: "30px" }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Attendance Status Card */}
+            <div style={{ backgroundColor: activeAttendance ? "#f0fdf4" : "#f8fafc", border: `1.5px solid ${activeAttendance ? "#86efac" : "var(--surface-border)"}`, borderRadius: "var(--r-md)", padding: "14px 16px", marginBottom: "14px" }}>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", fontWeight: 600, textTransform: "uppercase" }}>Status Presensi Hari Ini</p>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginTop: "4px" }}>
+                <p style={{ fontSize: "15px", fontWeight: 800, color: activeAttendance ? "#16a34a" : "var(--ink-primary)" }}>
+                  {activeAttendance ? "🟢 Sudah Absen Masuk" : "⚪ Belum Absen Masuk"}
+                </p>
+                {activeAttendance && (
+                  <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534" }}>
+                    {formatTimeOnly(activeAttendance.clockIn)} WIB
+                  </span>
+                )}
+              </div>
+              {activeAttendance && (
+                <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "4px" }}>
+                  📍 Jarak terdeteksi: {activeAttendance.distanceMeters}m dari outlet
+                </p>
+              )}
+            </div>
+
+            {/* Outlet Info */}
+            <div style={{ backgroundColor: "var(--bg-app)", borderRadius: "var(--r-md)", padding: "10px 14px", marginBottom: "14px", fontSize: "12px", display: "flex", flexDirection: "column", gap: "4px" }}>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--ink-muted)" }}>Lokasi Toko:</span>
+                <strong style={{ color: "var(--ink-primary)" }}>{state.outletLocation?.addressName || "Outlet Pontianak"}</strong>
+              </div>
+              <div style={{ display: "flex", justifyContent: "space-between" }}>
+                <span style={{ color: "var(--ink-muted)" }}>Status Geofence:</span>
+                <span style={{ fontWeight: 700, color: state.outletLocation?.isEnabled ? "var(--primary)" : "#64748b" }}>
+                  {state.outletLocation?.isEnabled ? `Aktif (Maks ${state.outletLocation.radiusMeters}m)` : "Nonaktif"}
+                </span>
+              </div>
+            </div>
+
+            {/* Error Message */}
+            {absenError && (
+              <div style={{ backgroundColor: "#fef2f2", border: "1px solid #fecaca", borderRadius: "var(--r-md)", padding: "10px 12px", marginBottom: "14px" }}>
+                <p style={{ fontSize: "12px", color: "#dc2626", fontWeight: 600, lineHeight: 1.4 }}>
+                  {absenError}
+                </p>
+              </div>
+            )}
+
+            {/* Action Button */}
+            {!activeAttendance ? (
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleDoClockIn}
+                disabled={isAbsenLoading}
+                style={{ width: "100%" }}
+              >
+                {isAbsenLoading ? (
+                  <>
+                    <SpinnerGap size={18} className="animate-spin" />
+                    <span>Memverifikasi Lokasi GPS...</span>
+                  </>
+                ) : (
+                  <>
+                    <MapPin size={18} weight="fill" />
+                    <span>Klik Untuk Absen Masuk Sekarang</span>
+                  </>
+                )}
+              </button>
+            ) : (
+              <button
+                type="button"
+                className="btn-ghost"
+                onClick={() => setShowAttendanceModal(false)}
+                style={{ width: "100%" }}
+              >
+                <span>Tutup</span>
+              </button>
+            )}
           </div>
         </div>
       )}
