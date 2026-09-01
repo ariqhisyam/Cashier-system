@@ -6,7 +6,7 @@ import React, {
   useEffect,
   ReactNode,
 } from "react";
-import type { AppState, Product, Transaction, Employee, Expense } from "./types";
+import type { AppState, Product, Transaction, Employee, Expense, ShiftReport } from "./types";
 
 const STORAGE_KEY = "matcha-kyoto-data-v3";
 const STORAGE_KEY_V2 = "matcha-kyoto-data-v2"; // used for migration
@@ -49,6 +49,7 @@ const INITIAL_STATE: AppState = {
   products: DEFAULT_PRODUCTS,
   transactions: [],
   expenses: [],
+  shiftReports: [],
   qrisImageUrl: "",
   session: null,
   employees: DEFAULT_EMPLOYEES,
@@ -69,6 +70,8 @@ type Action =
   | { type: "TOGGLE_EMPLOYEE_STATUS"; payload: string }
   | { type: "ADD_EXPENSE"; payload: Expense }
   | { type: "DELETE_EXPENSE"; payload: string }
+  | { type: "CLOSE_SHIFT"; payload: ShiftReport }
+  | { type: "DELETE_SHIFT_REPORT"; payload: string }
   | { type: "HYDRATE"; payload: Partial<AppState> };
 
 function reducer(state: AppState, action: Action): AppState {
@@ -82,6 +85,7 @@ function reducer(state: AppState, action: Action): AppState {
         products: action.payload.products && action.payload.products.length > 0 ? action.payload.products : DEFAULT_PRODUCTS,
         employees: action.payload.employees && action.payload.employees.length > 0 ? action.payload.employees : DEFAULT_EMPLOYEES,
         expenses: action.payload.expenses ?? [],
+        shiftReports: action.payload.shiftReports ?? [],
       };
     case "LOGIN":
       return {
@@ -145,6 +149,18 @@ function reducer(state: AppState, action: Action): AppState {
       return { ...state, expenses: [action.payload, ...state.expenses] };
     case "DELETE_EXPENSE":
       return { ...state, expenses: state.expenses.filter((ex) => ex.id !== action.payload) };
+    case "CLOSE_SHIFT":
+      return {
+        ...state,
+        shiftReports: [action.payload, ...(state.shiftReports || [])],
+        session: null,
+        activeEmployee: null,
+      };
+    case "DELETE_SHIFT_REPORT":
+      return {
+        ...state,
+        shiftReports: (state.shiftReports || []).filter((sr) => sr.id !== action.payload),
+      };
     default:
       return state;
   }
@@ -183,6 +199,7 @@ export function StoreProvider({ children }: { children: ReactNode }) {
             products: saved.products ?? DEFAULT_PRODUCTS,
             transactions: saved.transactions ?? [],
             expenses: saved.expenses ?? [],
+            shiftReports: saved.shiftReports ?? [],
             qrisImageUrl: saved.qrisImageUrl ?? "",
             employees: saved.employees ?? DEFAULT_EMPLOYEES,
             session: saved.session ?? null,

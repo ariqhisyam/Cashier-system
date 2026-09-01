@@ -24,6 +24,7 @@ export interface Transaction {
   items: ReceiptItem[];
   total: number;
   timestamp: number; // epoch ms
+  cashierId?: string;
   cashierName?: string;
   paymentMethod: "cash" | "qris";
   cashPaid?: number;       // for cash payments
@@ -47,10 +48,33 @@ export interface Expense {
   timestamp: number; // epoch ms
 }
 
+export interface ShiftReport {
+  id: string;
+  shiftName: string; // e.g. "Shift Harian"
+  closedAt: number; // epoch ms
+  closedBy: string; // employee name
+  employeeId?: string;
+  totalGrossRevenue: number;
+  totalCups: number;
+  totalTransactions: number;
+  totalHpp: number;
+  dailySalaryCost: number;
+  totalExpenses: number;
+  netProfit: number;
+  cashRevenue: number;
+  qrisRevenue: number;
+  cashCups: number;
+  qrisCups: number;
+  cashCount: number;
+  qrisCount: number;
+  notes?: string;
+}
+
 export interface AppState {
   products: Product[];
   transactions: Transaction[];
   expenses: Expense[];
+  shiftReports: ShiftReport[];
   qrisImageUrl: string;
   session: "admin" | "karyawan" | null;
   employees: Employee[];

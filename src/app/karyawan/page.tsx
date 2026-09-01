@@ -2,9 +2,9 @@
 import { useState, useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { Plus, Minus, SignOut, ShoppingCart, X, Money, QrCode, Camera, CheckCircle } from "@phosphor-icons/react";
+import { Plus, Minus, SignOut, ShoppingCart, X, Money, QrCode, Camera, CheckCircle, ClockAfternoon, NotePencil } from "@phosphor-icons/react";
 import { useStore, formatRupiah } from "@/lib/store";
-import type { CartItem, Transaction } from "@/lib/types";
+import type { CartItem, Transaction, ShiftReport } from "@/lib/types";
 import BottomNav from "@/components/BottomNav";
 import Receipt from "@/components/Receipt";
 
@@ -22,6 +22,8 @@ export default function KaryawanPage() {
   const [qrisProofUrl, setQrisProofUrl] = useState("");
   const [showReceipt, setShowReceipt] = useState(false);
   const [lastTransaction, setLastTransaction] = useState<Transaction | null>(null);
+  const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
+  const [shiftNotes, setShiftNotes] = useState("");
   const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -90,6 +92,7 @@ export default function KaryawanPage() {
       id: crypto.randomUUID(),
       timestamp: Date.now(),
       total,
+      cashierId: state.activeEmployee?.id,
       cashierName: state.activeEmployee?.name || "Kasir Utama",
       paymentMethod,
       cashPaid: paymentMethod === "cash" ? cashPaid : undefined,
@@ -110,6 +113,84 @@ export default function KaryawanPage() {
   const qrisUrl = `https://chart.googleapis.com/chart?cht=qr&chs=220x220&chl=${encodeURIComponent(
     state.qrisImageUrl || `MATCHA-KYOTO-PAY-${total}`
   )}&choe=UTF-8`;
+
+  const now = new Date();
+  const isSameDay = (ts: number, ref: Date) => {
+    const d = new Date(ts);
+    return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
+  };
+
+  // Find the last closed shift for THIS specific active employee today
+  const lastClosedShift = (state.shiftReports || []).find((sr) => {
+    const isThisEmployee = sr.employeeId
+      ? sr.employeeId === state.activeEmployee?.id
+      : sr.closedBy === (state.activeEmployee?.name || "Kasir");
+    return isThisEmployee && isSameDay(sr.closedAt, now);
+  });
+
+  const shiftStartTime = lastClosedShift ? lastClosedShift.closedAt : 0;
+
+  // Active shift transactions: made by THIS employee today and AFTER their last closed shift
+  const shiftTxs = state.transactions.filter((tx) => {
+    const matchCashier = tx.cashierId
+      ? tx.cashierId === state.activeEmployee?.id
+      : tx.cashierName === (state.activeEmployee?.name || "Kasir Utama");
+    return matchCashier && isSameDay(tx.timestamp, now) && tx.timestamp > shiftStartTime;
+  });
+
+  const todayCups = shiftTxs.reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+  const todayCashCups = shiftTxs
+    .filter((tx) => tx.paymentMethod === "cash")
+    .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+  const todayQrisCups = shiftTxs
+    .filter((tx) => tx.paymentMethod === "qris")
+    .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
+
+  function handleConfirmCloseShift() {
+    const shiftGross = shiftTxs.reduce((s, tx) => s + tx.total, 0);
+    const shiftCash = shiftTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
+    const shiftQris = shiftTxs.filter((tx) => tx.paymentMethod === "qris").reduce((s, tx) => s + tx.total, 0);
+    const cashCount = shiftTxs.filter((tx) => tx.paymentMethod === "cash").length;
+    const qrisCount = shiftTxs.filter((tx) => tx.paymentMethod === "qris").length;
+
+    const shiftHpp = shiftTxs.reduce((sum, tx) => {
+      return sum + tx.items.reduce((s, item) => {
+        const product = state.products.find((p) => p.name === item.name);
+        return s + (product ? product.rawMaterialCost * item.quantity : 0);
+      }, 0);
+    }, 0);
+
+    const employeeSalaryCost = Math.round((state.activeEmployee?.monthlySalary ?? 0) / 30);
+    const shiftExpenses = (state.expenses ?? []).filter((ex) => isSameDay(ex.timestamp, now) && ex.timestamp > shiftStartTime);
+    const shiftExpenseTotal = shiftExpenses.reduce((s, ex) => s + ex.amount, 0);
+
+    const netProfit = shiftGross - shiftHpp - employeeSalaryCost - shiftExpenseTotal;
+
+    const report: ShiftReport = {
+      id: crypto.randomUUID(),
+      shiftName: `Shift ${state.activeEmployee?.name || "Kasir"}`,
+      closedAt: Date.now(),
+      closedBy: state.activeEmployee?.name || "Kasir",
+      employeeId: state.activeEmployee?.id,
+      totalGrossRevenue: shiftGross,
+      totalCups: todayCups,
+      totalTransactions: shiftTxs.length,
+      totalHpp: shiftHpp,
+      dailySalaryCost: employeeSalaryCost,
+      totalExpenses: shiftExpenseTotal,
+      netProfit: netProfit,
+      cashRevenue: shiftCash,
+      qrisRevenue: shiftQris,
+      cashCups: todayCashCups,
+      qrisCups: todayQrisCups,
+      cashCount: cashCount,
+      qrisCount: qrisCount,
+      notes: shiftNotes.trim() || undefined,
+    };
+
+    dispatch({ type: "CLOSE_SHIFT", payload: report });
+    router.replace("/");
+  }
 
   return (
     <div className="page-root">
@@ -141,17 +222,43 @@ export default function KaryawanPage() {
               Pilih Menu
             </h1>
           </div>
-          <button
-            type="button"
-            className="btn-icon"
-            onClick={() => {
-              dispatch({ type: "LOGOUT" });
-              router.replace("/");
-            }}
-            title="Keluar"
-          >
-            <SignOut size={18} />
-          </button>
+
+          <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+            <button
+              type="button"
+              onClick={() => setShowCloseShiftModal(true)}
+              style={{
+                backgroundColor: "#fee2e2",
+                color: "#dc2626",
+                border: "1px solid #fca5a5",
+                borderRadius: "var(--r-pill)",
+                padding: "6px 12px",
+                fontSize: "11px",
+                fontWeight: 700,
+                display: "flex",
+                alignItems: "center",
+                gap: "4px",
+                cursor: "pointer",
+                transition: "all 0.15s ease",
+              }}
+              title="Tutup Shift Operasional"
+            >
+              <ClockAfternoon size={14} weight="bold" />
+              <span>Tutup Shift</span>
+            </button>
+
+            <button
+              type="button"
+              className="btn-icon"
+              onClick={() => {
+                dispatch({ type: "LOGOUT" });
+                router.replace("/");
+              }}
+              title="Keluar"
+            >
+              <SignOut size={18} />
+            </button>
+          </div>
         </div>
 
         {/* Menu grid */}
@@ -549,6 +656,136 @@ export default function KaryawanPage() {
 
       {showReceipt && lastTransaction && (
         <Receipt transaction={lastTransaction} onClose={() => setShowReceipt(false)} />
+      )}
+
+      {/* Close Shift Modal */}
+      {showCloseShiftModal && (
+        <div className="modal-overlay" onClick={() => setShowCloseShiftModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()}>
+            <div className="drag-handle" />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ width: "34px", height: "34px", borderRadius: "10px", backgroundColor: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
+                  <ClockAfternoon size={20} weight="fill" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 800, color: "var(--ink-primary)" }}>
+                    Tutup Shift Kasir
+                  </h3>
+                  <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>
+                    Kasir: <strong style={{ color: "var(--ink-primary)" }}>{state.activeEmployee?.name || "Kasir"}</strong>
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setShowCloseShiftModal(false)}
+                className="btn-icon"
+                style={{ width: "30px", height: "30px" }}
+              >
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Summary metrics for employee */}
+            <div
+              style={{
+                backgroundColor: "var(--ink-primary)",
+                borderRadius: "var(--r-md)",
+                padding: "14px 16px",
+                marginBottom: "14px",
+                color: "#ffffff",
+              }}
+            >
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "10px" }}>
+                <p style={{ fontSize: "11px", color: "rgba(255,255,255,0.7)", fontWeight: 600, textTransform: "uppercase" }}>
+                  Total Cup Terjual Shift Ini
+                </p>
+                <p style={{ fontSize: "20px", fontWeight: 800, color: "#ffffff" }}>
+                  {todayCups} <span style={{ fontSize: "12px", fontWeight: 500 }}>Cup</span>
+                </p>
+              </div>
+
+              <div style={{ display: "flex", gap: "8px" }}>
+                <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "6px", padding: "6px 8px" }}>
+                  <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)" }}>💵 Cash</p>
+                  <p style={{ fontSize: "12px", fontWeight: 800, color: "#4ade80" }}>{todayCashCups} Cup</p>
+                </div>
+                <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "6px", padding: "6px 8px" }}>
+                  <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)" }}>📱 QRIS</p>
+                  <p style={{ fontSize: "12px", fontWeight: 800, color: "#60a5fa" }}>{todayQrisCups} Cup</p>
+                </div>
+                <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.08)", borderRadius: "6px", padding: "6px 8px" }}>
+                  <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.6)" }}>🧾 Struk</p>
+                  <p style={{ fontSize: "12px", fontWeight: 800, color: "var(--primary)" }}>{shiftTxs.length}</p>
+                </div>
+              </div>
+            </div>
+
+            {/* Notes input */}
+            <div style={{ marginBottom: "14px" }}>
+              <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>
+                Catatan Shift Kasir <span style={{ fontWeight: 500, color: "var(--ink-muted)" }}>(Opsional)</span>
+              </label>
+              <textarea
+                placeholder="Contoh: Sisa stok cup 45, laci kasir klop, operasional lancar..."
+                value={shiftNotes}
+                onChange={(e) => setShiftNotes(e.target.value)}
+                className="input"
+                style={{ height: "70px", resize: "none", fontSize: "12px", paddingTop: "8px" }}
+              />
+            </div>
+
+            <div style={{ backgroundColor: "#fef3c7", border: "1px solid #fde68a", borderRadius: "var(--r-md)", padding: "10px 12px", marginBottom: "16px" }}>
+              <p style={{ fontSize: "11px", color: "#92400e", lineHeight: 1.4 }}>
+                ℹ️ Laporan shift harian akan otomatis dikirim dan tersimpan ke <strong>Admin History</strong>. Sesi kasir Anda akan otomatis keluar setelah penutupan shift.
+              </p>
+            </div>
+
+            <div style={{ display: "flex", gap: "10px" }}>
+              <button
+                type="button"
+                onClick={() => setShowCloseShiftModal(false)}
+                style={{
+                  flex: 1,
+                  padding: "12px",
+                  borderRadius: "var(--r-pill)",
+                  border: "1.5px solid var(--surface-border)",
+                  backgroundColor: "var(--surface)",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  color: "var(--ink-primary)",
+                  cursor: "pointer",
+                }}
+              >
+                Batal
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmCloseShift}
+                style={{
+                  flex: 2,
+                  backgroundColor: "#dc2626",
+                  color: "#ffffff",
+                  border: "none",
+                  borderRadius: "var(--r-pill)",
+                  padding: "12px",
+                  fontSize: "13px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  boxShadow: "0 4px 12px rgba(220,38,38,0.25)",
+                }}
+              >
+                <ClockAfternoon size={16} weight="bold" />
+                <span>Konfirmasi Tutup Shift</span>
+              </button>
+            </div>
+          </div>
+        </div>
       )}
 
       <BottomNav role="karyawan" />
