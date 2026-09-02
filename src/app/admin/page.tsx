@@ -2,10 +2,15 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore, formatRupiah } from "@/lib/store";
+import type { Transaction, Product, User } from "@/lib/types";
 import BottomNav from "@/components/BottomNav";
 import BarChart from "@/components/BarChart";
+import ReceiptModal from "@/components/Receipt";
 import { SignOut, TrendUp, Money, ChartBar, CreditCard, Coins, Plus, Trash, X, Receipt } from "@phosphor-icons/react";
 import { useLogout } from "@/hooks";
+import { useTransactions } from "@/hooks/useTransactions";
+import { useProducts } from "@/hooks/useProducts";
+import { useUsers } from "@/hooks/useUsers";
 
 type ChartFilter = "harian" | "bulanan" | "tahunan";
 
@@ -24,24 +29,68 @@ export default function AdminPage() {
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expensePresets] = useState(["Es Batu", "Listrik", "Gas", "Transportasi", "Lainnya"]);
+  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
+
+  // Live queries from backend
+  const { data: transactionsData } = useTransactions({ limit: 100 });
+  const { data: productsData } = useProducts({ limit: 100 });
+  const { data: usersData } = useUsers({ limit: 100 });
 
   const now = new Date();
 
-  const todayTxs = state.transactions.filter((tx) => isSameDay(tx.timestamp, now));
+  // Map backend database transactions
+  const liveTransactions: Transaction[] = transactionsData?.items
+    ? transactionsData.items.map((tx) => ({
+        id: tx.id,
+        items: (tx.items || []).map((it) => ({
+          name: it.productName,
+          quantity: it.quantity,
+          price: it.price,
+          subtotal: it.subtotal,
+        })),
+        total: tx.total,
+        timestamp: new Date(tx.createdAt).getTime(),
+        cashierId: tx.cashierId,
+        cashierName: tx.cashierName,
+        paymentMethod: (tx.paymentMethod ? tx.paymentMethod.toLowerCase() : "cash") as "cash" | "qris",
+        cashPaid: tx.cashPaid ?? undefined,
+        changeAmount: tx.changeAmount ?? undefined,
+        qrisProofUrl: tx.qrisProofUrl ?? undefined,
+      }))
+    : state.transactions || [];
+
+  // Map backend products for HPP
+  const liveProducts: Product[] = productsData?.products
+    ? productsData.products.map((p) => ({
+        id: p.id,
+        name: p.name,
+        price: p.price,
+        stock: p.stock,
+        imageUrl: p.imageUrl || "/matcha-latte.jpg",
+        rawMaterialCost: p.rawMaterialCost || 0,
+      }))
+    : state.products || [];
+
+  // Map backend employees for salary
+  const liveEmployees = usersData?.users
+    ? usersData.users.filter((u) => u.role === "KARYAWAN")
+    : state.employees || [];
+
+  const todayTxs = liveTransactions.filter((tx) => isSameDay(tx.timestamp, now));
 
   const grossRevenue = todayTxs.reduce((s, tx) => s + tx.total, 0);
   const revenueAfterHpp = todayTxs.reduce((sum, tx) => {
     const cost = tx.items.reduce((s, item) => {
-      const product = state.products.find((p) => p.name === item.name);
+      const product = liveProducts.find((p) => p.name === item.name);
       return s + (product ? product.rawMaterialCost * item.quantity : 0);
     }, 0);
     return sum + tx.total - cost;
   }, 0);
 
   // Daily salary cost
-  const dailySalaryCost = state.employees
-    .filter((e) => e.isActive && e.monthlySalary)
-    .reduce((s, e) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
+  const dailySalaryCost = liveEmployees
+    .filter((e: any) => e.isActive && e.monthlySalary)
+    .reduce((s: number, e: any) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
 
   // Today's additional expenses
   const todayExpenses = (state.expenses ?? []).filter((ex) => isSameDay(ex.timestamp, now));
@@ -55,7 +104,7 @@ export default function AdminPage() {
   const cashCount = todayTxs.filter((tx) => tx.paymentMethod === "cash").length;
   const qrisCount = todayTxs.filter((tx) => tx.paymentMethod === "qris").length;
 
-  const activeEmployeesWithSalary = state.employees.filter((e) => e.isActive && e.monthlySalary);
+  const activeEmployeesWithSalary = liveEmployees.filter((e: any) => e.isActive && e.monthlySalary);
 
   function handleAddExpense() {
     const amount = parseInt(expenseAmount.replace(/\D/g, ""), 10);
@@ -81,7 +130,7 @@ export default function AdminPage() {
         const d = new Date(now);
         d.setDate(now.getDate() - (6 - i));
         const label = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
-        const value = state.transactions.filter((tx) => {
+        const value = liveTransactions.filter((tx) => {
           const txd = new Date(tx.timestamp);
           return txd.getFullYear() === d.getFullYear() && txd.getMonth() === d.getMonth() && txd.getDate() === d.getDate();
         }).reduce((s, tx) => s + tx.total, 0);
@@ -92,7 +141,7 @@ export default function AdminPage() {
       return Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
         const label = `${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
-        const value = state.transactions.filter((tx) => {
+        const value = liveTransactions.filter((tx) => {
           const txd = new Date(tx.timestamp);
           return txd.getFullYear() === d.getFullYear() && txd.getMonth() === d.getMonth();
         }).reduce((s, tx) => s + tx.total, 0);
@@ -101,7 +150,7 @@ export default function AdminPage() {
     }
     return Array.from({ length: 4 }, (_, i) => {
       const year = now.getFullYear() - (3 - i);
-      const value = state.transactions.filter((tx) => new Date(tx.timestamp).getFullYear() === year).reduce((s, tx) => s + tx.total, 0);
+      const value = liveTransactions.filter((tx) => new Date(tx.timestamp).getFullYear() === year).reduce((s, tx) => s + tx.total, 0);
       return { label: String(year), value };
     });
   }
@@ -353,29 +402,43 @@ export default function AdminPage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {state.transactions.length === 0 ? (
+              {liveTransactions.length === 0 ? (
                 <p style={{ textAlign: "center", color: "var(--ink-muted)", fontSize: "13px", padding: "20px 0" }}>
                   Belum ada transaksi
                 </p>
-              ) : state.transactions.slice(0, 4).map((tx) => {
+              ) : liveTransactions.slice(0, 5).map((tx) => {
                 const d = new Date(tx.timestamp);
+                const totalCups = (tx.items || []).reduce((s, it) => s + it.quantity, 0);
                 return (
-                  <div key={tx.id} className="card" style={{ padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                  <div
+                    key={tx.id}
+                    onClick={() => setSelectedTx(tx)}
+                    className="card"
+                    style={{
+                      padding: "12px 14px",
+                      display: "flex",
+                      justifyContent: "space-between",
+                      alignItems: "center",
+                      cursor: "pointer",
+                      transition: "all 0.15s ease",
+                    }}
+                  >
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>
-                          #{tx.id.slice(-6).toUpperCase()}
+                          #{tx.id.slice(0, 8).toUpperCase()}
                         </p>
                         <span style={{
-                          fontSize: "10px", padding: "1px 5px", borderRadius: "9999px", fontWeight: 700,
+                          fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", fontWeight: 700,
                           backgroundColor: tx.paymentMethod === "cash" ? "#f0fdf4" : "#eff6ff",
                           color: tx.paymentMethod === "cash" ? "#16a34a" : "#2563eb",
+                          border: `1px solid ${tx.paymentMethod === "cash" ? "#86efac" : "#93c5fd"}`,
                         }}>
-                          {tx.paymentMethod === "cash" ? "💵" : "📱"}
+                          {tx.paymentMethod === "cash" ? "💵 Cash" : "📱 QRIS"}
                         </span>
                       </div>
                       <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} · {tx.items.length} item
+                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} · {tx.cashierName || "Kasir"} · {totalCups} Cup
                       </p>
                     </div>
                     <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--primary)" }}>
@@ -388,6 +451,11 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
+
+      {/* Selected Transaction Receipt Modal */}
+      {selectedTx && (
+        <ReceiptModal transaction={selectedTx} onClose={() => setSelectedTx(null)} />
+      )}
 
       {/* Add Expense Modal */}
       {showExpenseModal && (

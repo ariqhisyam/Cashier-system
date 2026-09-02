@@ -87,3 +87,61 @@ export async function getTransactionById(
   );
   return res.data.data;
 }
+
+export interface CloseShiftInput {
+  shiftName: string;
+  totalGrossRevenue: number;
+  totalCups: number;
+  totalTransactions: number;
+  cashRevenue: number;
+  qrisRevenue: number;
+  cashCups: number;
+  qrisCups: number;
+  totalHpp: number;
+  netProfit: number;
+  notes?: string;
+}
+
+export interface ShiftReportResponse {
+  id: string;
+  shiftName: string;
+  closedBy: string;
+  employeeId?: string;
+  totalGrossRevenue: number;
+  totalCups: number;
+  totalTransactions: number;
+  totalHpp: number;
+  dailySalaryCost: number;
+  totalExpenses: number;
+  netProfit: number;
+  cashRevenue: number;
+  qrisRevenue: number;
+  cashCups: number;
+  qrisCups: number;
+  cashCount: number;
+  qrisCount: number;
+  notes?: string;
+  closedAt: string;
+  createdAt: string;
+}
+
+/**
+ * Submits shift close report to backend and dispatches Telegram notification
+ */
+export async function submitCloseShift(data: CloseShiftInput): Promise<ShiftReportResponse> {
+  const res = await apiClient.post<ApiResponse<ShiftReportResponse>>(
+    '/transactions/close-shift',
+    data,
+  );
+  return res.data.data;
+}
+
+/**
+ * Fetches all shift reports from database
+ */
+export async function getShiftReports(): Promise<ShiftReportResponse[]> {
+  const res = await apiClient.get<ApiResponse<ShiftReportResponse[]>>(
+    '/transactions/shift-reports',
+  );
+  return res.data.data;
+}

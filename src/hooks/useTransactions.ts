@@ -3,9 +3,13 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
+  submitCloseShift,
+  getShiftReports,
   CreateTransactionInput,
   FetchTransactionsParams,
   TransactionResponse,
+  CloseShiftInput,
+  ShiftReportResponse,
 } from '@/lib/api/transactions';
 import { PRODUCT_KEYS } from './useProducts';
 
@@ -15,6 +19,7 @@ export const TRANSACTION_KEYS = {
   list: (params?: FetchTransactionsParams) => [...TRANSACTION_KEYS.lists(), params] as const,
   details: () => [...TRANSACTION_KEYS.all, 'detail'] as const,
   detail: (id: string) => [...TRANSACTION_KEYS.details(), id] as const,
+  shifts: () => [...TRANSACTION_KEYS.all, 'shifts'] as const,
 };
 
 /**
@@ -41,6 +46,18 @@ export function useTransaction(id: string, options?: { enabled?: boolean }) {
 }
 
 /**
+ * Hook to query shift reports list
+ */
+export function useShiftReports(options?: { enabled?: boolean }) {
+  return useQuery({
+    queryKey: TRANSACTION_KEYS.shifts(),
+    queryFn: () => getShiftReports(),
+    placeholderData: keepPreviousData,
+    enabled: options?.enabled ?? true,
+  });
+}
+
+/**
  * Hook to create transaction on backend and refresh product stocks
  */
 export function useCreateTransaction() {
@@ -52,6 +69,21 @@ export function useCreateTransaction() {
       // Invalidate both products and transactions so live stock updates everywhere
       queryClient.invalidateQueries({ queryKey: PRODUCT_KEYS.all });
       queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.all });
+    },
+  });
+}
+
+/**
+ * Hook to submit shift close report to backend & trigger Telegram notification
+ */
+export function useSubmitCloseShift() {
+  const queryClient = useQueryClient();
+
+  return useMutation<ShiftReportResponse, Error, CloseShiftInput>({
+    mutationFn: (data: CloseShiftInput) => submitCloseShift(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.shifts() });
     },
   });
 }

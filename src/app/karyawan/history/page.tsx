@@ -4,6 +4,12 @@ import { useRouter } from "next/navigation";
 import { useStore } from "@/lib/store";
 import type { Transaction, ShiftReport, AttendanceRecord } from "@/lib/types";
 import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
+import { useTransactions, useSubmitCloseShift } from "@/hooks/useTransactions";
+import {
+  useActiveAttendance,
+  useClockInAttendance,
+  useClockOutAttendance,
+} from "@/hooks/useAttendance";
 import BottomNav from "@/components/BottomNav";
 import Receipt from "@/components/Receipt";
 import { Receipt as ReceiptIcon, Coffee, ClockAfternoon, X, MapPin, Clock, CheckCircle, SpinnerGap } from "@phosphor-icons/react";
@@ -25,6 +31,13 @@ export default function KaryawanHistoryPage() {
   const [showCloseShiftModal, setShowCloseShiftModal] = useState(false);
   const [shiftNotes, setShiftNotes] = useState("");
 
+  // Live transactions & attendance from backend
+  const { data: transactionsData } = useTransactions({ limit: 100 });
+  const submitCloseShiftMutation = useSubmitCloseShift();
+  const { data: liveActiveAttendance } = useActiveAttendance();
+  const clockInMutation = useClockInAttendance();
+  const clockOutMutation = useClockOutAttendance();
+
   // Attendance state
   const [showAttendanceModal, setShowAttendanceModal] = useState(false);
   const [isAbsenLoading, setIsAbsenLoading] = useState(false);
@@ -32,28 +45,55 @@ export default function KaryawanHistoryPage() {
   const [absenSuccessToast, setAbsenSuccessToast] = useState<string | null>(null);
 
   const now = new Date();
-  const isSameDay = (ts: number, ref: Date) => {
-    const d = new Date(ts);
-    return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
-  };
+  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
   // Find the last closed shift for THIS specific active employee today
   const lastClosedShift = (state.shiftReports || []).find((sr) => {
     const isThisEmployee = sr.employeeId
       ? sr.employeeId === state.activeEmployee?.id
-      : sr.closedBy === (state.activeEmployee?.name || "Kasir");
+      : (sr.closedBy || "").toLowerCase() === (state.activeEmployee?.name || "Kasir").toLowerCase();
     return isThisEmployee && isSameDay(sr.closedAt, now);
   });
 
-  const shiftStartTime = lastClosedShift ? lastClosedShift.closedAt : 0;
+  const shiftStartTime = liveActiveAttendance?.clockIn
+    ? new Date(liveActiveAttendance.clockIn).getTime()
+    : lastClosedShift
+    ? lastClosedShift.closedAt
+    : startOfDay;
 
-  // Active shift transactions: made by THIS employee today and AFTER their last closed shift
-  const shiftTxs = state.transactions.filter((tx) => {
-    const matchCashier = tx.cashierId
-      ? tx.cashierId === state.activeEmployee?.id
-      : tx.cashierName === (state.activeEmployee?.name || "Kasir Utama");
-    return matchCashier && isSameDay(tx.timestamp, now) && tx.timestamp > shiftStartTime;
+  // Map backend database transactions to frontend Transaction model
+  const liveTransactions: Transaction[] = transactionsData?.items
+    ? transactionsData.items.map((tx) => ({
+        id: tx.id,
+        items: (tx.items || []).map((it) => ({
+          name: it.productName,
+          quantity: it.quantity,
+          price: it.price,
+          subtotal: it.subtotal,
+        })),
+        total: tx.total,
+        timestamp: new Date(tx.createdAt).getTime(),
+        cashierId: tx.cashierId,
+        cashierName: tx.cashierName,
+        paymentMethod: (tx.paymentMethod ? tx.paymentMethod.toLowerCase() : "cash") as "cash" | "qris",
+        cashPaid: tx.cashPaid ?? undefined,
+        changeAmount: tx.changeAmount ?? undefined,
+        qrisProofUrl: tx.qrisProofUrl ?? undefined,
+      }))
+    : state.transactions || [];
+
+  // All transactions today for this cashier
+  const todayTxs = liveTransactions.filter((tx) => {
+    const matchCashier = !state.activeEmployee?.id
+      ? true
+      : tx.cashierId === state.activeEmployee.id ||
+        (tx.cashierName || "").toLowerCase() === (state.activeEmployee.name || "Kasir Utama").toLowerCase();
+    return matchCashier && isSameDay(tx.timestamp, now);
   });
+
+  // Active shift transactions: filter by shift start time, or fallback to all today's transactions
+  const shiftTxsFiltered = todayTxs.filter((tx) => tx.timestamp >= (shiftStartTime - 60000));
+  const shiftTxs = shiftTxsFiltered.length > 0 ? shiftTxsFiltered : todayTxs;
 
   // Cup calculations for this active employee's shift
   const todayCups = shiftTxs.reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
@@ -65,10 +105,24 @@ export default function KaryawanHistoryPage() {
     .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
 
   // Active attendance record for this employee today
-  const activeAttendance = (state.attendanceRecords || []).find((rec) => {
-    const isThisEmp = rec.employeeId === (state.activeEmployee?.id || "default");
-    return isThisEmp && isSameDay(rec.clockIn, now) && !rec.clockOut;
-  });
+  const activeAttendance: AttendanceRecord | undefined = liveActiveAttendance
+    ? {
+        id: liveActiveAttendance.id,
+        employeeId: liveActiveAttendance.userId || state.activeEmployee?.id || "default",
+        employeeName: liveActiveAttendance.userName,
+        clockIn: new Date(liveActiveAttendance.clockIn).getTime(),
+        clockOut: liveActiveAttendance.clockOut
+          ? new Date(liveActiveAttendance.clockOut).getTime()
+          : undefined,
+        latitude: liveActiveAttendance.latitude || 0,
+        longitude: liveActiveAttendance.longitude || 0,
+        distanceMeters: liveActiveAttendance.distanceMeters || 0,
+        dateString: new Date(liveActiveAttendance.clockIn).toISOString().split("T")[0],
+      }
+    : (state.attendanceRecords || []).find((rec) => {
+        const isThisEmp = rec.employeeId === (state.activeEmployee?.id || "default");
+        return isThisEmp && isSameDay(rec.clockIn, now) && !rec.clockOut;
+      });
 
   async function handleDoClockIn() {
     setAbsenError("");
@@ -177,6 +231,22 @@ export default function KaryawanHistoryPage() {
       notes: shiftNotes.trim() || undefined,
     };
 
+    // Send shift report summary to Telegram Bot via backend
+    submitCloseShiftMutation.mutate({
+      shiftName: report.shiftName,
+      totalGrossRevenue: shiftGross,
+      totalCups: todayCups,
+      totalTransactions: shiftTxs.length,
+      cashRevenue: shiftCash,
+      qrisRevenue: shiftQris,
+      cashCups: todayCashCups,
+      qrisCups: todayQrisCups,
+      totalHpp: shiftHpp,
+      netProfit: netProfit,
+      notes: shiftNotes.trim() || undefined,
+    });
+
+    clockOutMutation.mutate({});
     dispatch({
       type: "RECORD_CLOCK_OUT",
       payload: { employeeId: state.activeEmployee?.id || "default", clockOut: Date.now() },
