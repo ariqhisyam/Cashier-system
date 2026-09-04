@@ -24,8 +24,16 @@ export interface PaginatedResponse<T> {
   };
 }
 
+const getBaseUrl = () => {
+  let url = process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001";
+  if (!url.startsWith("http://") && !url.startsWith("https://")) {
+    url = `https://${url}`;
+  }
+  return url.replace(/\/+$/, "");
+};
+
 export const apiClient = axios.create({
-  baseURL: process.env.NEXT_PUBLIC_API_URL || "http://localhost:3001",
+  baseURL: getBaseUrl(),
   headers: {
     "Content-Type": "application/json",
   },
