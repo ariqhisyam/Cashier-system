@@ -2,12 +2,13 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore, formatRupiah } from "@/lib/store";
-import type { Transaction, ShiftReport, Product } from "@/lib/types";
+import type { Transaction, ShiftReport, Product, Expense } from "@/lib/types";
 import BottomNav from "@/components/BottomNav";
 import Receipt from "@/components/Receipt";
 import { useTransactions, useShiftReports } from "@/hooks/useTransactions";
 import { useProducts } from "@/hooks/useProducts";
 import { useUsers } from "@/hooks/useUsers";
+import { useExpenses, useCreateExpense, useDeleteExpense } from "@/hooks/useExpenses";
 import {
   MagnifyingGlass,
   Receipt as ReceiptIcon,
@@ -28,10 +29,12 @@ import {
   CaretRight,
   ArrowsClockwise,
   Calendar,
+  Trash,
+  Plus,
 } from "@phosphor-icons/react";
 
 type Filter = "harian" | "mingguan" | "bulanan" | "kustom";
-type ViewMode = "shifts" | "transactions";
+type ViewMode = "shifts" | "transactions" | "expenses";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
 
@@ -80,7 +83,7 @@ const FILTER_LABELS: Record<Filter, string> = {
 };
 
 export default function AdminHistoryPage() {
-  const { state } = useStore();
+  const { state, dispatch } = useStore();
   const router = useRouter();
   const [viewMode, setViewMode] = useState<ViewMode>("shifts");
   const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
@@ -96,6 +99,15 @@ export default function AdminHistoryPage() {
   const { data: shiftReportsData } = useShiftReports();
   const { data: productsData } = useProducts({ limit: 100 });
   const { data: usersData } = useUsers({ limit: 100 });
+  const { data: backendExpenses } = useExpenses();
+  const deleteExpenseMutation = useDeleteExpense();
+  const createExpenseMutation = useCreateExpense();
+
+  // Modal tambah biaya di riwayat
+  const [showExpenseModal, setShowExpenseModal] = useState(false);
+  const [expenseDesc, setExpenseDesc] = useState("");
+  const [expenseAmount, setExpenseAmount] = useState("");
+  const [expenseDate, setExpenseDate] = useState(toDateInputValue(new Date()));
 
   const now = new Date();
 
@@ -220,10 +232,74 @@ export default function AdminHistoryPage() {
     }, 0);
   }
 
-  // ── Daily salary per day ───────────────────────────────────────────────────
-  const dailySalaryCost = liveEmployees
-    .filter((e: any) => e.isActive && e.monthlySalary)
+  // ── Mapping live expenses from backend (fallback to state.expenses) ─────────
+  const liveExpenses: Expense[] = backendExpenses
+    ? backendExpenses.map((ex) => ({
+        id: ex.id,
+        description: ex.description,
+        amount: ex.amount,
+        timestamp: new Date(ex.date).getTime(),
+      }))
+    : state.expenses || [];
+
+  function handleDeleteExpense(id: string) {
+    dispatch({ type: "DELETE_EXPENSE", payload: id });
+    deleteExpenseMutation.mutate(id);
+  }
+
+  function handleAddExpense() {
+    const amount = parseInt(expenseAmount.replace(/\D/g, ""), 10);
+    if (!expenseDesc.trim() || !amount || amount <= 0) return;
+    const newId = crypto.randomUUID();
+    const dateObj = expenseDate ? new Date(`${expenseDate}T12:00:00`) : new Date();
+    const ts = dateObj.getTime();
+    dispatch({
+      type: "ADD_EXPENSE",
+      payload: { id: newId, description: expenseDesc.trim(), amount, timestamp: ts },
+    });
+    createExpenseMutation.mutate({
+      description: expenseDesc.trim(),
+      amount,
+      date: dateObj.toISOString(),
+    });
+    setExpenseDesc("");
+    setExpenseAmount("");
+    setShowExpenseModal(false);
+  }
+
+  function openExpenseModal(preset?: string) {
+    setExpenseDesc(preset ?? "");
+    setExpenseAmount("");
+    setExpenseDate(toDateInputValue(selectedDate));
+    setShowExpenseModal(true);
+  }
+
+  // ── Salary calculations: Daily and Monthly ────────────────────────────────
+  const activeEmployeesWithSalary = liveEmployees.filter((e: any) => e.isActive && e.monthlySalary);
+  const dailySalaryCost = activeEmployeesWithSalary
     .reduce((s: number, e: any) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
+  const monthlySalaryTotal = activeEmployeesWithSalary
+    .reduce((s: number, e: any) => s + (e.monthlySalary ?? 0), 0);
+
+  // Beban gaji sesuai periode (Harian = 1 hari, Mingguan = 7 hari, Bulanan = total gaji bulanan)
+  let periodSalaryCost = 0;
+  let periodSalaryLabel = "";
+  if (filter === "harian") {
+    periodSalaryCost = dailySalaryCost;
+    periodSalaryLabel = "1 hari";
+  } else if (filter === "mingguan") {
+    periodSalaryCost = dailySalaryCost * 7;
+    periodSalaryLabel = "7 hari";
+  } else if (filter === "bulanan") {
+    periodSalaryCost = monthlySalaryTotal > 0 ? monthlySalaryTotal : dailySalaryCost * 30;
+    periodSalaryLabel = "1 bulan";
+  } else if (filter === "kustom") {
+    const startMs = customStartDate ? new Date(`${customStartDate}T00:00:00`).getTime() : selectedDate.getTime();
+    const endMs = customEndDate ? new Date(`${customEndDate}T23:59:59`).getTime() : selectedDate.getTime();
+    const diffDays = Math.max(1, Math.round((endMs - startMs) / (1000 * 60 * 60 * 24)) + 1);
+    periodSalaryCost = dailySalaryCost * diffDays;
+    periodSalaryLabel = `${diffDays} hari`;
+  }
 
   // Map backend database shift reports
   const liveShiftReports: ShiftReport[] = shiftReportsData
@@ -278,15 +354,16 @@ export default function AdminHistoryPage() {
   const shiftCash = periodShifts.reduce((s, sr) => s + sr.cashRevenue, 0);
   const shiftQris = periodShifts.reduce((s, sr) => s + sr.qrisRevenue, 0);
 
-  // ── Transactions in Period (for Transaction View) ─────────────────────────
+  // ── Transactions & Financials in Period ───────────────────────────────────
   const periodTxs = liveTransactions.filter((tx) => matchPeriod(tx.timestamp));
   const periodRevenue = periodTxs.reduce((s, tx) => s + tx.total, 0);
   const periodTxCups = periodTxs.reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
-  const periodDays = filter === "harian" ? 1 : filter === "mingguan" ? 7 : 30;
-  const periodSalaryCost = dailySalaryCost * periodDays;
-  const periodExpenses = (state.expenses ?? []).filter((ex) => matchPeriod(ex.timestamp));
+  const periodExpenses = liveExpenses.filter((ex) => matchPeriod(ex.timestamp));
   const periodExpenseTotal = periodExpenses.reduce((s, ex) => s + ex.amount, 0);
   const periodHpp = periodTxs.reduce((s, tx) => s + txHpp(tx), 0);
+  const periodCash = periodTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
+  const periodQris = periodTxs.filter((tx) => tx.paymentMethod === "qris").reduce((s, tx) => s + tx.total, 0);
+  // Laba bersih periode = Omzet - HPP - Beban Gaji Periode - Total Pengeluaran Periode (bisa minus / nombok)
   const periodNetRevenue = periodRevenue - periodHpp - periodSalaryCost - periodExpenseTotal;
 
   const filteredTxs = periodTxs.filter((tx) => {
@@ -322,7 +399,7 @@ export default function AdminHistoryPage() {
               </h1>
             </div>
 
-            {/* View Mode Toggle: Laporan Shift vs Transaksi */}
+            {/* View Mode Toggle: Laporan Shift vs Transaksi vs Pengeluaran */}
             <div
               style={{
                 display: "flex",
@@ -330,13 +407,14 @@ export default function AdminHistoryPage() {
                 padding: "3px",
                 borderRadius: "var(--r-pill)",
                 border: "1px solid var(--surface-border)",
+                gap: "2px",
               }}
             >
               <button
                 type="button"
                 onClick={() => setViewMode("shifts")}
                 style={{
-                  padding: "6px 12px",
+                  padding: "6px 10px",
                   borderRadius: "var(--r-pill)",
                   border: "none",
                   backgroundColor: viewMode === "shifts" ? "var(--ink-primary)" : "transparent",
@@ -347,13 +425,13 @@ export default function AdminHistoryPage() {
                   transition: "all 0.15s ease",
                 }}
               >
-                Laporan Shift
+                Shift ({periodShifts.length})
               </button>
               <button
                 type="button"
                 onClick={() => setViewMode("transactions")}
                 style={{
-                  padding: "6px 12px",
+                  padding: "6px 10px",
                   borderRadius: "var(--r-pill)",
                   border: "none",
                   backgroundColor: viewMode === "transactions" ? "var(--ink-primary)" : "transparent",
@@ -364,7 +442,24 @@ export default function AdminHistoryPage() {
                   transition: "all 0.15s ease",
                 }}
               >
-                Transaksi
+                Transaksi ({periodTxs.length})
+              </button>
+              <button
+                type="button"
+                onClick={() => setViewMode("expenses")}
+                style={{
+                  padding: "6px 10px",
+                  borderRadius: "var(--r-pill)",
+                  border: "none",
+                  backgroundColor: viewMode === "expenses" ? "var(--ink-primary)" : "transparent",
+                  color: viewMode === "expenses" ? "#ffffff" : "var(--ink-secondary)",
+                  fontSize: "11px",
+                  fontWeight: 700,
+                  cursor: "pointer",
+                  transition: "all 0.15s ease",
+                }}
+              >
+                Pengeluaran ({periodExpenses.length})
               </button>
             </div>
           </div>
@@ -531,58 +626,154 @@ export default function AdminHistoryPage() {
           </div>
 
           {/* ========================================================================= */}
+          {/* MASTER FINANCIAL SUMMARY HERO CARD                                       */}
+          {/* ========================================================================= */}
+          <div
+            style={{
+              backgroundColor: "var(--ink-primary)",
+              borderRadius: "var(--r-lg)",
+              padding: "18px 20px",
+              boxShadow: "0 8px 24px rgba(20,31,25,0.25)",
+              color: "#ffffff",
+            }}
+          >
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
+              <div>
+                <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
+                  <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "11px", fontWeight: 700, textTransform: "uppercase", letterSpacing: "0.5px" }}>
+                    Ringkasan Finansial · {getHeroTimeLabel()}
+                  </p>
+                  <span
+                    style={{
+                      fontSize: "10px",
+                      fontWeight: 800,
+                      padding: "2px 8px",
+                      borderRadius: "999px",
+                      backgroundColor: periodNetRevenue >= 0 ? "rgba(34, 197, 94, 0.2)" : "rgba(239, 68, 68, 0.25)",
+                      color: periodNetRevenue >= 0 ? "#4ade80" : "#fca5a5",
+                      border: `1px solid ${periodNetRevenue >= 0 ? "rgba(74, 222, 128, 0.4)" : "rgba(252, 165, 165, 0.4)"}`,
+                    }}
+                  >
+                    {periodNetRevenue >= 0 ? "✓ Surplus" : "⚠️ Nombok"}
+                  </span>
+                </div>
+                <div style={{ display: "flex", alignItems: "baseline", gap: "10px", marginTop: "4px" }}>
+                  <p style={{ color: "#ffffff", fontSize: "24px", fontWeight: 800, lineHeight: 1 }}>
+                    {formatRupiah(periodRevenue)}
+                  </p>
+                  <span style={{ fontSize: "11.5px", color: "rgba(255,255,255,0.6)" }}>
+                    Omzet Kotor ({periodTxCups} Cup · {periodTxs.length} Struk)
+                  </span>
+                </div>
+              </div>
+              <div
+                style={{
+                  width: "38px",
+                  height: "38px",
+                  borderRadius: "10px",
+                  backgroundColor: periodNetRevenue >= 0 ? "var(--primary)" : "#dc2626",
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  flexShrink: 0,
+                }}
+              >
+                {periodNetRevenue >= 0 ? (
+                  <TrendUp size={20} color="#ffffff" weight="bold" />
+                ) : (
+                  <TrendDown size={20} color="#ffffff" weight="bold" />
+                )}
+              </div>
+            </div>
+
+            {/* Financial Deductions Grid */}
+            <div
+              style={{
+                display: "grid",
+                gridTemplateColumns: "1fr 1fr 1fr",
+                gap: "8px",
+                marginBottom: "12px",
+              }}
+            >
+              <div style={{ backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
+                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>📦 HPP Bahan</p>
+                <p style={{ color: "#fca5a5", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>
+                  −{formatRupiah(periodHpp)}
+                </p>
+              </div>
+              <div style={{ backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
+                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>
+                  💼 Gaji ({periodSalaryLabel})
+                </p>
+                <p style={{ color: "#fde68a", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>
+                  −{formatRupiah(periodSalaryCost)}
+                </p>
+              </div>
+              <div style={{ backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
+                <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>🧾 Pengeluaran</p>
+                <p style={{ color: "#fca5a5", fontSize: "13px", fontWeight: 800, marginTop: "2px" }}>
+                  −{formatRupiah(periodExpenseTotal)}
+                </p>
+              </div>
+            </div>
+
+            {/* Laba Bersih Akhir Bar */}
+            <div
+              style={{
+                backgroundColor: periodNetRevenue >= 0 ? "rgba(34, 197, 94, 0.15)" : "rgba(220, 38, 38, 0.2)",
+                borderRadius: "8px",
+                padding: "10px 14px",
+                border: `1px solid ${periodNetRevenue >= 0 ? "rgba(74, 222, 128, 0.3)" : "rgba(248, 113, 113, 0.3)"}`,
+                display: "flex",
+                justifyContent: "space-between",
+                alignItems: "center",
+              }}
+            >
+              <div>
+                <p style={{ fontSize: "11px", fontWeight: 700, color: "rgba(255,255,255,0.8)" }}>
+                  Laba Bersih Akhir
+                </p>
+                <p style={{ fontSize: "10px", color: "rgba(255,255,255,0.5)", marginTop: "1px" }}>
+                  (Omzet − HPP − Beban Gaji − Pengeluaran)
+                </p>
+              </div>
+              <p
+                style={{
+                  fontSize: "18px",
+                  fontWeight: 900,
+                  color: periodNetRevenue >= 0 ? "#4ade80" : "#f87171",
+                  letterSpacing: "-0.3px",
+                }}
+              >
+                {formatRupiah(periodNetRevenue)}
+              </p>
+            </div>
+
+            {/* Payment Method Split row */}
+            <div
+              style={{
+                display: "flex",
+                justifyContent: "space-between",
+                borderTop: "1px solid rgba(255,255,255,0.1)",
+                paddingTop: "10px",
+                marginTop: "12px",
+                fontSize: "11.5px",
+              }}
+            >
+              <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                💵 Cash: <strong style={{ color: "#ffffff" }}>{formatRupiah(periodCash)}</strong>
+              </span>
+              <span style={{ color: "rgba(255,255,255,0.7)" }}>
+                📱 QRIS: <strong style={{ color: "#ffffff" }}>{formatRupiah(periodQris)}</strong>
+              </span>
+            </div>
+          </div>
+
+          {/* ========================================================================= */}
           {/* TAB 1: LAPORAN SHIFT VIEW                                                  */}
           {/* ========================================================================= */}
           {viewMode === "shifts" && (
             <>
-              {/* Aggregated Period Summary Card */}
-              <div
-                style={{
-                  backgroundColor: "var(--ink-primary)",
-                  borderRadius: "var(--r-lg)",
-                  padding: "18px 20px",
-                  boxShadow: "0 8px 24px rgba(20,31,25,0.25)",
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "flex-start", marginBottom: "12px" }}>
-                  <div>
-                    <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                      Ringkasan Shift · {getHeroTimeLabel()}
-                    </p>
-                    <p style={{ color: "#ffffff", fontSize: "26px", fontWeight: 800, marginTop: "2px", lineHeight: 1 }}>
-                      {formatRupiah(shiftGross)}
-                    </p>
-                  </div>
-                  <div style={{ width: "38px", height: "38px", borderRadius: "10px", backgroundColor: "var(--primary)", display: "flex", alignItems: "center", justifyContent: "center" }}>
-                    <ChartLineUp size={20} color="#ffffff" weight="fill" />
-                  </div>
-                </div>
-
-                {/* 3 Core Highlight Tiles: Cup, Net Profit, Shift Count */}
-                <div style={{ display: "flex", gap: "8px", marginBottom: "10px" }}>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>🥤 Total Cup</p>
-                    <p style={{ color: "#ffffff", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>{shiftCups} Cup</p>
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>✨ Laba Bersih</p>
-                    <p style={{ color: shiftNet >= 0 ? "#4ade80" : "#f87171", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>
-                      {formatRupiah(shiftNet)}
-                    </p>
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.07)", borderRadius: "8px", padding: "8px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.55)", fontSize: "10px", fontWeight: 600 }}>📋 Shift</p>
-                    <p style={{ color: "#ffffff", fontSize: "14px", fontWeight: 800, marginTop: "2px" }}>{periodShifts.length} Selesai</p>
-                  </div>
-                </div>
-
-                {/* Bottom Cash vs QRIS row */}
-                <div style={{ display: "flex", justifyContent: "space-between", borderTop: "1px solid rgba(255,255,255,0.1)", paddingTop: "8px", fontSize: "12px" }}>
-                  <span style={{ color: "rgba(255,255,255,0.7)" }}>💵 Cash: <strong style={{ color: "#ffffff" }}>{formatRupiah(shiftCash)}</strong></span>
-                  <span style={{ color: "rgba(255,255,255,0.7)" }}>📱 QRIS: <strong style={{ color: "#ffffff" }}>{formatRupiah(shiftQris)}</strong></span>
-                </div>
-              </div>
-
               {/* Section Header */}
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <h3 style={{ fontSize: "14px", fontWeight: 800, color: "var(--ink-primary)" }}>
@@ -714,41 +905,6 @@ export default function AdminHistoryPage() {
           {/* ========================================================================= */}
           {viewMode === "transactions" && (
             <>
-              {/* Period Transaction Summary Card */}
-              <div
-                style={{
-                  backgroundColor: "var(--primary)",
-                  borderRadius: "var(--r-lg)",
-                  padding: "16px 18px",
-                  boxShadow: "0 6px 16px rgba(30,112,72,0.2)",
-                }}
-              >
-                <p style={{ color: "rgba(255,255,255,0.75)", fontSize: "11px", fontWeight: 600, textTransform: "uppercase", letterSpacing: "0.5px" }}>
-                  Total Pendapatan · {getHeroTimeLabel()}
-                </p>
-                <p style={{ color: "#ffffff", fontSize: "24px", fontWeight: 800, marginTop: "4px" }}>
-                  {formatRupiah(periodRevenue)}
-                </p>
-
-                {/* Sub metrics */}
-                <div style={{ display: "flex", gap: "8px", marginTop: "10px" }}>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: "8px", padding: "7px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "10px", fontWeight: 600 }}>🥤 Total Cup</p>
-                    <p style={{ color: "#ffffff", fontSize: "13px", fontWeight: 800 }}>{periodTxCups} Cup</p>
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: "8px", padding: "7px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "10px", fontWeight: 600 }}>✨ Laba Bersih</p>
-                    <p style={{ color: periodNetRevenue >= 0 ? "#a7f3d0" : "#fca5a5", fontSize: "13px", fontWeight: 800 }}>
-                      {formatRupiah(periodNetRevenue)}
-                    </p>
-                  </div>
-                  <div style={{ flex: 1, backgroundColor: "rgba(255,255,255,0.12)", borderRadius: "8px", padding: "7px 10px" }}>
-                    <p style={{ color: "rgba(255,255,255,0.65)", fontSize: "10px", fontWeight: 600 }}>🧾 Struk</p>
-                    <p style={{ color: "#ffffff", fontSize: "13px", fontWeight: 800 }}>{periodTxs.length}</p>
-                  </div>
-                </div>
-              </div>
-
               {/* Search */}
               <div style={{ position: "relative" }}>
                 <MagnifyingGlass
@@ -839,6 +995,132 @@ export default function AdminHistoryPage() {
                           </span>
                         </div>
                       </button>
+                    );
+                  })}
+                </div>
+              )}
+            </>
+          )}
+
+          {/* ========================================================================= */}
+          {/* TAB 3: PENGELUARAN TAMBAHAN VIEW                                         */}
+          {/* ========================================================================= */}
+          {viewMode === "expenses" && (
+            <>
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <div>
+                  <h3 style={{ fontSize: "14px", fontWeight: 800, color: "var(--ink-primary)" }}>
+                    Histori Pengeluaran
+                  </h3>
+                  <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>
+                    {periodExpenses.length} pengeluaran · {getTimeLabel()}
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => openExpenseModal()}
+                  style={{
+                    backgroundColor: "var(--primary)",
+                    color: "#ffffff",
+                    border: "none",
+                    borderRadius: "var(--r-pill)",
+                    padding: "6px 12px",
+                    fontSize: "11.5px",
+                    fontWeight: 700,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: "4px",
+                  }}
+                >
+                  <Plus size={14} weight="bold" />
+                  <span>Tambah Biaya</span>
+                </button>
+              </div>
+
+              {/* Expenses List */}
+              {periodExpenses.length === 0 ? (
+                <div
+                  style={{
+                    textAlign: "center",
+                    padding: "44px 16px",
+                    color: "var(--ink-muted)",
+                    backgroundColor: "var(--surface)",
+                    borderRadius: "var(--r-lg)",
+                    border: "1px dashed var(--surface-border)",
+                  }}
+                >
+                  <p style={{ fontSize: "36px", marginBottom: "8px" }}>🧾</p>
+                  <p style={{ fontSize: "14px", fontWeight: 700, color: "var(--ink-primary)" }}>
+                    Tidak Ada Pengeluaran
+                  </p>
+                  <p style={{ fontSize: "12px", marginTop: "4px", maxWidth: "280px", marginInline: "auto", lineHeight: 1.4 }}>
+                    Belum ada catatan biaya operasional tambahan pada periode {getTimeLabel()}.
+                  </p>
+                </div>
+              ) : (
+                <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+                  {periodExpenses.map((ex) => {
+                    return (
+                      <div
+                        key={ex.id}
+                        className="card"
+                        style={{
+                          padding: "12px 16px",
+                          display: "flex",
+                          justifyContent: "space-between",
+                          alignItems: "center",
+                          border: "1px solid var(--surface-border)",
+                        }}
+                      >
+                        <div style={{ display: "flex", alignItems: "center", gap: "12px" }}>
+                          <div
+                            style={{
+                              width: "38px",
+                              height: "38px",
+                              borderRadius: "10px",
+                              backgroundColor: "#fee2e2",
+                              display: "flex",
+                              alignItems: "center",
+                              justifyContent: "center",
+                              flexShrink: 0,
+                              color: "#dc2626",
+                            }}
+                          >
+                            <ReceiptIcon size={20} weight="fill" />
+                          </div>
+                          <div>
+                            <p style={{ fontSize: "13.5px", fontWeight: 700, color: "var(--ink-primary)" }}>
+                              {ex.description}
+                            </p>
+                            <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
+                              {formatDateFull(ex.timestamp)}
+                            </p>
+                          </div>
+                        </div>
+
+                        <div style={{ display: "flex", alignItems: "center", gap: "10px" }}>
+                          <span style={{ fontSize: "14px", fontWeight: 800, color: "#dc2626" }}>
+                            −{formatRupiah(ex.amount)}
+                          </span>
+                          <button
+                            type="button"
+                            onClick={() => handleDeleteExpense(ex.id)}
+                            style={{
+                              background: "none",
+                              border: "none",
+                              cursor: "pointer",
+                              color: "var(--ink-muted)",
+                              padding: "4px",
+                              display: "flex",
+                              alignItems: "center",
+                            }}
+                            title="Hapus Pengeluaran"
+                          >
+                            <Trash size={16} />
+                          </button>
+                        </div>
+                      </div>
                     );
                   })}
                 </div>
@@ -965,8 +1247,104 @@ export default function AdminHistoryPage() {
         </div>
       )}
 
+      {/* Modal: Tambah Pengeluaran */}
+      {showExpenseModal && (
+        <div className="modal-overlay" onClick={() => setShowExpenseModal(false)}>
+          <div className="modal-sheet" onClick={(e) => e.stopPropagation()} style={{ maxWidth: "420px" }}>
+            <div className="drag-handle" />
+            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: "16px" }}>
+              <div style={{ display: "flex", alignItems: "center", gap: "8px" }}>
+                <div style={{ width: "36px", height: "36px", borderRadius: "10px", backgroundColor: "#fee2e2", display: "flex", alignItems: "center", justifyContent: "center", color: "#dc2626" }}>
+                  <ReceiptIcon size={20} weight="fill" />
+                </div>
+                <div>
+                  <h3 style={{ fontSize: "16px", fontWeight: 800, color: "var(--ink-primary)" }}>Catat Pengeluaran</h3>
+                  <p style={{ fontSize: "11px", color: "var(--ink-muted)" }}>Mengurangi laba bersih periode ini</p>
+                </div>
+              </div>
+              <button type="button" onClick={() => setShowExpenseModal(false)} className="btn-icon" style={{ width: "30px", height: "30px" }}>
+                <X size={16} />
+              </button>
+            </div>
+
+            {/* Quick Presets */}
+            <div style={{ marginBottom: "14px" }}>
+              <p style={{ fontSize: "11px", fontWeight: 700, color: "var(--ink-muted)", marginBottom: "6px" }}>Pilihan Cepat:</p>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: "6px" }}>
+                {["Beli Es Batu", "Cup & Sedotan", "Susu UHT", "Bahan Pelengkap", "Lain-lain"].map((preset) => (
+                  <button
+                    key={preset}
+                    type="button"
+                    onClick={() => setExpenseDesc(preset)}
+                    style={{
+                      padding: "4px 10px",
+                      borderRadius: "var(--r-pill)",
+                      border: "1px solid var(--surface-border)",
+                      backgroundColor: expenseDesc === preset ? "var(--primary-light)" : "var(--surface)",
+                      color: expenseDesc === preset ? "var(--primary)" : "var(--ink-secondary)",
+                      fontSize: "11px",
+                      fontWeight: 700,
+                      cursor: "pointer",
+                    }}
+                  >
+                    {preset}
+                  </button>
+                ))}
+              </div>
+            </div>
+
+            <div style={{ display: "flex", flexDirection: "column", gap: "12px" }}>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>Keterangan Biaya</label>
+                <input
+                  type="text"
+                  placeholder="Contoh: Beli es batu 2 kantong"
+                  value={expenseDesc}
+                  onChange={(e) => setExpenseDesc(e.target.value)}
+                  className="input"
+                  autoFocus
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>Tanggal Biaya</label>
+                <input
+                  type="date"
+                  value={expenseDate}
+                  onChange={(e) => setExpenseDate(e.target.value)}
+                  className="input"
+                />
+              </div>
+              <div>
+                <label style={{ fontSize: "12px", fontWeight: 700, color: "var(--ink-secondary)", display: "block", marginBottom: "6px" }}>Jumlah</label>
+                <div style={{ position: "relative" }}>
+                  <span style={{ position: "absolute", left: "14px", top: "50%", transform: "translateY(-50%)", fontSize: "13px", fontWeight: 700, color: "var(--ink-muted)" }}>Rp</span>
+                  <input
+                    type="number"
+                    placeholder="50000"
+                    value={expenseAmount}
+                    onChange={(e) => setExpenseAmount(e.target.value)}
+                    className="input"
+                    style={{ paddingLeft: "38px" }}
+                    min={0}
+                  />
+                </div>
+              </div>
+              <button
+                type="button"
+                className="btn-primary"
+                onClick={handleAddExpense}
+                disabled={!expenseDesc.trim() || !expenseAmount || parseInt(expenseAmount, 10) <= 0}
+                style={{ marginTop: "4px" }}
+              >
+                <Plus size={16} weight="bold" />
+                <span>Simpan Pengeluaran</span>
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
       <BottomNav role="admin" />
     </div>
   );
 }
-//test

@@ -98,6 +98,8 @@ export interface CloseShiftInput {
   cashCups: number;
   qrisCups: number;
   totalHpp: number;
+  dailySalaryCost?: number;
+  totalExpenses?: number;
   netProfit: number;
   notes?: string;
 }

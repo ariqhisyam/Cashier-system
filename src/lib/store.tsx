@@ -274,9 +274,12 @@ export function useStore() {
 }
 
 export function formatRupiah(amount: number): string {
-  return new Intl.NumberFormat("id-ID", {
+  const isNegative = amount < 0;
+  const absVal = Math.abs(Math.round(amount || 0));
+  const formatted = new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(amount);
+  }).format(absVal);
+  return isNegative ? `-${formatted}` : formatted;
 }

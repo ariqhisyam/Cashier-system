@@ -458,6 +458,8 @@ export function useKaryawanCashier() {
       cashCups: todayCashCups,
       qrisCups: todayQrisCups,
       totalHpp: shiftHpp,
+      dailySalaryCost: employeeSalaryCost,
+      totalExpenses: shiftExpenseTotal,
       netProfit: netProfit,
       notes: shiftNotes.trim() || undefined,
     });

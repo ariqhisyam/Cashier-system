@@ -2,7 +2,7 @@
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore, formatRupiah } from "@/lib/store";
-import type { Transaction, Product, User } from "@/lib/types";
+import type { Transaction, Product, User, Expense } from "@/lib/types";
 import BottomNav from "@/components/BottomNav";
 import BarChart from "@/components/BarChart";
 import ReceiptModal from "@/components/Receipt";
@@ -11,6 +11,7 @@ import { useLogout } from "@/hooks";
 import { useTransactions } from "@/hooks/useTransactions";
 import { useProducts } from "@/hooks/useProducts";
 import { useUsers } from "@/hooks/useUsers";
+import { useExpenses, useCreateExpense, useDeleteExpense } from "@/hooks/useExpenses";
 
 type ChartFilter = "harian" | "bulanan" | "tahunan";
 
@@ -35,6 +36,9 @@ export default function AdminPage() {
   const { data: transactionsData } = useTransactions({ limit: 100 });
   const { data: productsData } = useProducts({ limit: 100 });
   const { data: usersData } = useUsers({ limit: 100 });
+  const { data: backendExpenses } = useExpenses();
+  const createExpenseMutation = useCreateExpense();
+  const deleteExpenseMutation = useDeleteExpense();
 
   const now = new Date();
 
@@ -76,6 +80,16 @@ export default function AdminPage() {
     ? usersData.users.filter((u) => u.role === "KARYAWAN")
     : state.employees || [];
 
+  // Map backend expenses (fallback to state.expenses)
+  const liveExpenses: Expense[] = backendExpenses
+    ? backendExpenses.map((ex) => ({
+        id: ex.id,
+        description: ex.description,
+        amount: ex.amount,
+        timestamp: new Date(ex.date).getTime(),
+      }))
+    : state.expenses || [];
+
   const todayTxs = liveTransactions.filter((tx) => isSameDay(tx.timestamp, now));
 
   const grossRevenue = todayTxs.reduce((s, tx) => s + tx.total, 0);
@@ -87,16 +101,16 @@ export default function AdminPage() {
     return sum + tx.total - cost;
   }, 0);
 
-  // Daily salary cost
+  // Daily salary cost (beban gaji harian karyawan aktif selalu dialokasikan per hari)
   const dailySalaryCost = liveEmployees
     .filter((e: any) => e.isActive && e.monthlySalary)
     .reduce((s: number, e: any) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
 
-  // Today's additional expenses
-  const todayExpenses = (state.expenses ?? []).filter((ex) => isSameDay(ex.timestamp, now));
+  // Today's additional expenses (khusus hari ini antara 00:00 s/d 23:59)
+  const todayExpenses = liveExpenses.filter((ex) => isSameDay(ex.timestamp, now));
   const totalExpenses = todayExpenses.reduce((s, ex) => s + ex.amount, 0);
 
-  // Net revenue: gross - HPP - salary - additional expenses
+  // Net revenue: gross - HPP - salary - additional expenses (bisa minus / nombok)
   const netRevenue = revenueAfterHpp - dailySalaryCost - totalExpenses;
 
   const cashRevenue = todayTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
@@ -109,13 +123,25 @@ export default function AdminPage() {
   function handleAddExpense() {
     const amount = parseInt(expenseAmount.replace(/\D/g, ""), 10);
     if (!expenseDesc.trim() || !amount || amount <= 0) return;
+    const newId = crypto.randomUUID();
+    const nowTs = Date.now();
     dispatch({
       type: "ADD_EXPENSE",
-      payload: { id: crypto.randomUUID(), description: expenseDesc.trim(), amount, timestamp: Date.now() },
+      payload: { id: newId, description: expenseDesc.trim(), amount, timestamp: nowTs },
+    });
+    createExpenseMutation.mutate({
+      description: expenseDesc.trim(),
+      amount,
+      date: new Date().toISOString(),
     });
     setExpenseDesc("");
     setExpenseAmount("");
     setShowExpenseModal(false);
+  }
+
+  function handleDeleteExpense(id: string) {
+    dispatch({ type: "DELETE_EXPENSE", payload: id });
+    deleteExpenseMutation.mutate(id);
   }
 
   function openExpenseModal(preset?: string) {
@@ -250,7 +276,17 @@ export default function AdminPage() {
             <div className="stat-card">
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                 <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}>Keuntungan Bersih</p>
-                <Money size={18} color="var(--accent)" weight="fill" />
+                <span style={{
+                  fontSize: "10px",
+                  fontWeight: 800,
+                  padding: "2px 7px",
+                  borderRadius: "999px",
+                  backgroundColor: netRevenue >= 0 ? "#f0fdf4" : "#fef2f2",
+                  color: netRevenue >= 0 ? "#16a34a" : "#dc2626",
+                  border: `1px solid ${netRevenue >= 0 ? "#86efac" : "#fecaca"}`,
+                }}>
+                  {netRevenue >= 0 ? "Surplus" : "Nombok"}
+                </span>
               </div>
               <p style={{ fontSize: "16px", fontWeight: 800, color: netRevenue >= 0 ? "var(--primary)" : "#dc2626", marginTop: "6px" }}>
                 {formatRupiah(netRevenue)}
@@ -343,7 +379,7 @@ export default function AdminPage() {
                         <span style={{ fontSize: "14px", fontWeight: 800, color: "#dc2626" }}>{formatRupiah(ex.amount)}</span>
                         <button
                           type="button"
-                          onClick={() => dispatch({ type: "DELETE_EXPENSE", payload: ex.id })}
+                          onClick={() => handleDeleteExpense(ex.id)}
                           style={{ background: "none", border: "none", cursor: "pointer", color: "var(--ink-muted)", display: "flex", alignItems: "center" }}
                           title="Hapus"
                         >
