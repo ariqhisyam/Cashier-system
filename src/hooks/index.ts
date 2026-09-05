@@ -12,3 +12,4 @@ export * from "./useEditProductRow";
 export * from "./useQrisCard";
 export * from "./useTransactions";
 export * from "./useAttendance";
+export * from "./useExpenses";

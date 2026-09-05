@@ -28,7 +28,28 @@ export interface Coordinates {
 }
 
 /**
- * Get current browser/device GPS coordinates with smart fallback
+ * Check if coordinates are within outlet geofence boundary with smart GPS accuracy tolerance buffer
+ */
+export function isWithinGeofence(
+  currentLat: number,
+  currentLon: number,
+  outletLat: number,
+  outletLon: number,
+  radiusMeters: number,
+  accuracyMeters = 0
+): { isWithin: boolean; distanceMeters: number; maxAllowedRadius: number } {
+  const distanceMeters = calculateDistanceMeters(currentLat, currentLon, outletLat, outletLon);
+  const accuracyBuffer = Math.min(Math.max(0, accuracyMeters), 50);
+  const maxAllowedRadius = radiusMeters + accuracyBuffer;
+  return {
+    isWithin: distanceMeters <= maxAllowedRadius,
+    distanceMeters,
+    maxAllowedRadius,
+  };
+}
+
+/**
+ * Get current browser/device GPS coordinates with smart fallback and relaxed timeouts
  */
 export function getCurrentPositionAsync(): Promise<Coordinates> {
   return new Promise((resolve, reject) => {
@@ -57,16 +78,16 @@ export function getCurrentPositionAsync(): Promise<Coordinates> {
           if (error.code === error.PERMISSION_DENIED) {
             msg = "Akses lokasi ditolak. Silakan izinkan akses lokasi (GPS) pada browser/HP Anda untuk melakukan presensi.";
           } else if (error.code === error.POSITION_UNAVAILABLE) {
-            msg = "Sinyal GPS tidak tersedia. Pastikan Layanan Lokasi di Mac/HP Anda aktif.";
+            msg = "Sinyal GPS tidak terdeteksi. Pastikan Layanan Lokasi di perangkat Anda telah aktif.";
           } else if (error.code === error.TIMEOUT) {
-            msg = "Waktu pencarian GPS habis. Pastikan Layanan Lokasi di Pengaturan Mac/HP aktif, atau ketik koordinat Latitude & Longitude secara manual.";
+            msg = "Waktu pencarian GPS habis. Pastikan Layanan Lokasi (GPS) aktif atau coba muat ulang halaman.";
           }
           reject(new Error(msg));
         },
         {
           enableHighAccuracy: highAccuracy,
-          timeout: highAccuracy ? 6000 : 12000,
-          maximumAge: 60000, // allow up to 1 minute cached location
+          timeout: highAccuracy ? 10000 : 18000,
+          maximumAge: 120000, // allow up to 2 minutes cached location
         }
       );
     };

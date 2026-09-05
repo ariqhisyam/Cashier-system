@@ -2,6 +2,7 @@
 import React from "react";
 import { X, ClockAfternoon } from "@phosphor-icons/react";
 import type { Employee, Transaction } from "@/lib/types";
+import { formatRupiah } from "@/lib/store";
 
 interface CloseShiftModalProps {
   activeEmployee?: Employee | null;
@@ -10,6 +11,7 @@ interface CloseShiftModalProps {
   todayCashCups: number;
   todayQrisCups: number;
   shiftNotes: string;
+  todayExpenseTotal?: number;
   setShiftNotes: (val: string) => void;
   onConfirmCloseShift: () => void;
   onClose: () => void;
@@ -22,6 +24,7 @@ export default function CloseShiftModal({
   todayCashCups,
   todayQrisCups,
   shiftNotes,
+  todayExpenseTotal = 0,
   setShiftNotes,
   onConfirmCloseShift,
   onClose,
@@ -151,6 +154,7 @@ export default function CloseShiftModal({
             </div>
           </div>
         </div>
+
 
         {/* Notes input */}
         <div style={{ marginBottom: "14px" }}>

@@ -1,6 +1,6 @@
 import { useState, useRef } from "react";
 import { useRouter } from "next/navigation";
-import { useStore } from "@/lib/store";
+import { useStore, isSameDayWib } from "@/lib/store";
 import type {
   CartItem,
   Transaction,
@@ -8,17 +8,15 @@ import type {
   AttendanceRecord,
   Product,
 } from "@/lib/types";
-import { getCurrentPositionAsync, calculateDistanceMeters } from "@/lib/geo";
+import { getCurrentPositionAsync, calculateDistanceMeters, isWithinGeofence } from "@/lib/geo";
+import { compressImage } from "@/lib/image-utils";
 import { useProducts } from "./useProducts";
 import { useGeofence } from "./useGeofence";
 import { useQris } from "./useQris";
 import { useLogout } from "./useAuth";
 import { useUploadStorage } from "./useStorage";
-import {
-  useTransactions,
-  useCreateTransaction,
-  useSubmitCloseShift,
-} from "./useTransactions";
+import { useCreateTransaction, useCloseShiftReport } from "./useTransactions";
+import { useExpensesQuery } from "./useExpenses";
 import {
   useActiveAttendance,
   useClockInAttendance,
@@ -34,28 +32,22 @@ export function formatTimeOnly(ts: number) {
   return `${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export function isSameDay(ts: number, ref: Date): boolean {
-  const d = new Date(ts);
-  return (
-    d.getFullYear() === ref.getFullYear() &&
-    d.getMonth() === ref.getMonth() &&
-    d.getDate() === ref.getDate()
-  );
-}
-
 export function useKaryawanCashier() {
   const { state, dispatch } = useStore();
   const router = useRouter();
   const logoutMutation = useLogout();
   const uploadStorageMutation = useUploadStorage();
   const createTransactionMutation = useCreateTransaction();
-  const submitCloseShiftMutation = useSubmitCloseShift();
+  const closeShiftMutation = useCloseShiftReport();
   const { data: liveActiveAttendance } = useActiveAttendance();
   const clockInMutation = useClockInAttendance();
   const clockOutMutation = useClockOutAttendance();
+  const { data: liveExpenses } = useExpensesQuery();
 
-  // Fetch live transactions from backend
-  const { data: transactionsData } = useTransactions({ limit: 100 });
+  // All operational expenses for today (from live backend or store)
+  const allExpenses = liveExpenses?.length ? liveExpenses : state.expenses ?? [];
+  const todayExpenses = allExpenses.filter((ex) => isSameDayWib(ex.timestamp, new Date()));
+  const todayExpenseTotal = todayExpenses.reduce((s, ex) => s + ex.amount, 0);
 
   // Fetch products from backend or fallback to store
   const { data: productsData } = useProducts({
@@ -188,33 +180,45 @@ export function useKaryawanCashier() {
   }
 
   async function handleQrisProofUpload(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    if (!file) return;
+    const rawFile = e.target.files?.[0];
+    if (!rawFile) return;
 
-    // Show immediate local preview
-    const reader = new FileReader();
-    reader.onload = (ev) => {
-      setQrisProofUrl(ev.target?.result as string);
-      setCheckoutStep("qris_proof");
-    };
-    reader.readAsDataURL(file);
-
-    // Upload to Supabase Object Storage bucket in background
     try {
       setIsUploadingProof(true);
-      const res = await uploadStorageMutation.mutateAsync({
-        file,
-        folder: "qris_proofs",
-      });
-      if (res?.url) {
-        setQrisProofUrl(res.url);
-      }
+      // Fast client-side image compression (<150KB)
+      const { file: compressedFile, dataUrl } = await compressImage(rawFile, 1024, 1024, 0.75);
+      setQrisProofUrl(dataUrl);
+      setCheckoutStep("qris_proof");
+
+      // Background upload to Supabase Storage
+      uploadStorageMutation.mutate(
+        { file: compressedFile, folder: "qris_proofs" },
+        {
+          onSuccess: (res) => {
+            if (res?.url) {
+              setQrisProofUrl(res.url);
+            }
+          },
+          onError: (err) => {
+            console.warn("Gagal unggah foto ke cloud storage, menggunakan data lokal:", err);
+          },
+          onSettled: () => {
+            setIsUploadingProof(false);
+          },
+        }
+      );
     } catch (err) {
-      console.error("Gagal mengunggah foto bukti ke Supabase Storage:", err);
-    } finally {
+      console.error("Gagal kompres foto:", err);
       setIsUploadingProof(false);
     }
   }
+
+  function handleQrisDirectConfirm() {
+    if (createTransactionMutation.isPending) return;
+    setQrisProofUrl("");
+    finalize();
+  }
+
 
   function handleRetakePhoto() {
     setQrisProofUrl("");
@@ -273,55 +277,24 @@ export function useKaryawanCashier() {
   }
 
   const now = new Date();
-  const startOfDay = new Date(now.getFullYear(), now.getMonth(), now.getDate()).getTime();
 
-  // Find the last closed shift for THIS specific active employee today
+  // Find the last closed shift for THIS specific active employee today (in WIB)
   const lastClosedShift = (state.shiftReports || []).find((sr) => {
     const isThisEmployee = sr.employeeId
       ? sr.employeeId === state.activeEmployee?.id
-      : (sr.closedBy || "").toLowerCase() === (state.activeEmployee?.name || "Kasir").toLowerCase();
-    return isThisEmployee && isSameDay(sr.closedAt, now);
+      : sr.closedBy === (state.activeEmployee?.name || "Kasir");
+    return isThisEmployee && isSameDayWib(sr.closedAt, now);
   });
 
-  const shiftStartTime = liveActiveAttendance?.clockIn
-    ? new Date(liveActiveAttendance.clockIn).getTime()
-    : lastClosedShift
-    ? lastClosedShift.closedAt
-    : startOfDay;
+  const shiftStartTime = lastClosedShift ? new Date(lastClosedShift.closedAt).getTime() : 0;
 
-  // Map backend database transactions to frontend Transaction model
-  const liveTransactions: Transaction[] = transactionsData?.items
-    ? transactionsData.items.map((tx) => ({
-        id: tx.id,
-        items: (tx.items || []).map((it) => ({
-          name: it.productName,
-          quantity: it.quantity,
-          price: it.price,
-          subtotal: it.subtotal,
-        })),
-        total: tx.total,
-        timestamp: new Date(tx.createdAt).getTime(),
-        cashierId: tx.cashierId,
-        cashierName: tx.cashierName,
-        paymentMethod: (tx.paymentMethod ? tx.paymentMethod.toLowerCase() : "cash") as "cash" | "qris",
-        cashPaid: tx.cashPaid ?? undefined,
-        changeAmount: tx.changeAmount ?? undefined,
-        qrisProofUrl: tx.qrisProofUrl ?? undefined,
-      }))
-    : state.transactions || [];
-
-  // All transactions today for this cashier
-  const todayTxs = liveTransactions.filter((tx) => {
-    const matchCashier = !state.activeEmployee?.id
-      ? true
-      : tx.cashierId === state.activeEmployee.id ||
-        (tx.cashierName || "").toLowerCase() === (state.activeEmployee.name || "Kasir Utama").toLowerCase();
-    return matchCashier && isSameDay(tx.timestamp, now);
+  // Active shift transactions: made by THIS employee today and AFTER their last closed shift
+  const shiftTxs = state.transactions.filter((tx) => {
+    const matchCashier = tx.cashierId
+      ? tx.cashierId === state.activeEmployee?.id
+      : tx.cashierName === (state.activeEmployee?.name || "Kasir Utama");
+    return matchCashier && isSameDayWib(tx.timestamp, now) && tx.timestamp > shiftStartTime;
   });
-
-  // Active shift transactions: filter by shift start time, or show today's transactions if within same shift
-  const shiftTxsFiltered = todayTxs.filter((tx) => tx.timestamp >= (shiftStartTime - 60000));
-  const shiftTxs = shiftTxsFiltered.length > 0 ? shiftTxsFiltered : todayTxs;
 
   const todayCups = shiftTxs.reduce(
     (sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0),
@@ -334,28 +307,39 @@ export function useKaryawanCashier() {
     .filter((tx) => tx.paymentMethod === "qris")
     .reduce((sum, tx) => sum + tx.items.reduce((s, item) => s + item.quantity, 0), 0);
 
-  async function handleDoClockIn() {
+  async function handleDoClockIn(isEmergency = false) {
     setAbsenError("");
     setIsAbsenLoading(true);
 
     const locationConfig = currentOutletLocation;
-    let coords: { latitude?: number; longitude?: number } = {};
+    let coords: { latitude?: number; longitude?: number; accuracy?: number; notes?: string } = {};
 
-    if (locationConfig?.isEnabled) {
+    if (isEmergency) {
+      coords = {
+        notes: "[DARURAT] Presensi kasir darurat tanpa geofence GPS",
+      };
+    } else if (locationConfig?.isEnabled) {
       try {
         const gps = await getCurrentPositionAsync();
-        coords = { latitude: gps.latitude, longitude: gps.longitude };
-        const distance = calculateDistanceMeters(
+        coords = {
+          latitude: gps.latitude,
+          longitude: gps.longitude,
+          accuracy: gps.accuracy,
+        };
+
+        const check = isWithinGeofence(
           gps.latitude,
           gps.longitude,
           locationConfig.latitude,
-          locationConfig.longitude
+          locationConfig.longitude,
+          locationConfig.radiusMeters,
+          gps.accuracy
         );
 
-        if (distance > locationConfig.radiusMeters) {
+        if (!check.isWithin) {
           setIsAbsenLoading(false);
           setAbsenError(
-            `📍 Anda berada di luar area outlet (Jarak: ${distance}m dari toko). Batas radius presensi: ${locationConfig.radiusMeters}m.`
+            `📍 Anda berada di luar area outlet (Jarak: ${check.distanceMeters}m dari toko, akurasi GPS: ±${Math.round(gps.accuracy)}m). Batas radius presensi: ${locationConfig.radiusMeters}m.`
           );
           return;
         }
@@ -388,7 +372,31 @@ export function useKaryawanCashier() {
       setTimeout(() => setAbsenSuccessToast(null), 3000);
       setShowAttendanceModal(false);
     } catch (err: any) {
-      setAbsenError(err?.message || "Gagal mencatat presensi masuk ke server.");
+      console.warn("Server clock-in failed, checking fallback:", err);
+      // If user selected Emergency Bypass, or server error occurred, ensure cashier is not blocked
+      const nowMs = Date.now();
+      const fallbackAttendance: AttendanceRecord = {
+        id: `att-local-${nowMs}`,
+        employeeId: state.activeEmployee?.id || "default",
+        employeeName: state.activeEmployee?.name || "Kasir",
+        clockIn: nowMs,
+        latitude: coords.latitude || 0,
+        longitude: coords.longitude || 0,
+        distanceMeters: 0,
+        dateString: new Date(nowMs).toISOString().split("T")[0],
+      };
+
+      if (isEmergency) {
+        dispatch({ type: "RECORD_CLOCK_IN", payload: fallbackAttendance });
+        setAbsenSuccessToast(`⚠️ Presensi Masuk Darurat Tercatat (${formatTimeOnly(nowMs)} WIB)`);
+        setTimeout(() => setAbsenSuccessToast(null), 3000);
+        setShowAttendanceModal(false);
+      } else {
+        // Show the error message, and if they click emergency bypass next, fallback will activate
+        setAbsenError(
+          err?.message || "Gagal mencatat presensi ke server. Gunakan Presensi Darurat jika perlu membuka kasir segera."
+        );
+      }
     } finally {
       setIsAbsenLoading(false);
     }
@@ -409,21 +417,28 @@ export function useKaryawanCashier() {
       return (
         sum +
         tx.items.reduce((s, item) => {
+          if ((item as any).rawMaterialCost) {
+            return s + (item as any).rawMaterialCost * item.quantity;
+          }
           const product = products.find((p) => p.name === item.name);
           return s + (product ? product.rawMaterialCost * item.quantity : 0);
         }, 0)
       );
     }, 0);
 
-    const employeeSalaryCost = Math.round(
-      (state.activeEmployee?.monthlySalary ?? 0) / 30
-    );
-    const shiftExpenses = (state.expenses ?? []).filter(
-      (ex) => isSameDay(ex.timestamp, now) && ex.timestamp > shiftStartTime
-    );
-    const shiftExpenseTotal = shiftExpenses.reduce((s, ex) => s + ex.amount, 0);
+    let empSalary = state.activeEmployee?.monthlySalary;
+    if (!empSalary || empSalary <= 0) {
+      const matched = (state.employees || []).find(
+        (e) => e.id === state.activeEmployee?.id || e.name === state.activeEmployee?.name
+      );
+      empSalary = matched?.monthlySalary;
+    }
+    const employeeSalaryCost = Math.round((empSalary ?? 0) / 30);
+    // Individual shift reports do not bear store operational expenses (deducted at store daily/period summary level)
+    const shiftExpenseTotal = 0;
 
-    const netProfit = shiftGross - shiftHpp - employeeSalaryCost - shiftExpenseTotal;
+    // Shift Cashier Formula: Gross - HPP - Gaji Karyawan
+    const netProfit = shiftGross - shiftHpp - employeeSalaryCost;
 
     const report: ShiftReport = {
       id: crypto.randomUUID(),
@@ -447,24 +462,28 @@ export function useKaryawanCashier() {
       notes: shiftNotes.trim() || undefined,
     };
 
-    // Send shift report summary to Telegram Bot via backend
-    submitCloseShiftMutation.mutate({
+    // 1. Submit to backend PostgreSQL database & trigger Telegram notification
+    closeShiftMutation.mutate({
       shiftName: report.shiftName,
-      totalGrossRevenue: shiftGross,
-      totalCups: todayCups,
-      totalTransactions: shiftTxs.length,
-      cashRevenue: shiftCash,
-      qrisRevenue: shiftQris,
-      cashCups: todayCashCups,
-      qrisCups: todayQrisCups,
-      totalHpp: shiftHpp,
-      dailySalaryCost: employeeSalaryCost,
-      totalExpenses: shiftExpenseTotal,
-      netProfit: netProfit,
-      notes: shiftNotes.trim() || undefined,
+      totalGrossRevenue: report.totalGrossRevenue,
+      totalCups: report.totalCups,
+      totalTransactions: report.totalTransactions,
+      cashRevenue: report.cashRevenue,
+      qrisRevenue: report.qrisRevenue,
+      cashCups: report.cashCups,
+      qrisCups: report.qrisCups,
+      totalHpp: report.totalHpp,
+      dailySalaryCost: report.dailySalaryCost,
+      totalExpenses: report.totalExpenses,
+      cashCount: report.cashCount,
+      qrisCount: report.qrisCount,
+      netProfit: report.netProfit,
+      closedBy: report.closedBy,
+      employeeId: report.employeeId,
+      notes: report.notes,
     });
 
-    // Automatically record clock out on backend
+    // 2. Automatically record clock out on backend
     clockOutMutation.mutate({});
 
     dispatch({
@@ -478,7 +497,7 @@ export function useKaryawanCashier() {
     setShowCloseShiftModal(false);
     setShiftNotes("");
     setCart([]);
-    setAbsenSuccessToast("✅ Tutup Shift Berhasil! Laporan shift telah tercatat.");
+    setAbsenSuccessToast("✅ Tutup Shift Berhasil! Laporan shift tersimpan & terkirim ke Telegram.");
     setTimeout(() => setAbsenSuccessToast(null), 3500);
   }
 
@@ -514,6 +533,7 @@ export function useKaryawanCashier() {
     handleSelectMethod,
     handleCashConfirm,
     handleQrisProofUpload,
+    handleQrisDirectConfirm,
     handleRetakePhoto,
     finalize,
     showReceipt,
@@ -539,6 +559,8 @@ export function useKaryawanCashier() {
     todayCups,
     todayCashCups,
     todayQrisCups,
+    todayExpenses,
+    todayExpenseTotal,
     handleConfirmCloseShift,
     handleLogout,
   };

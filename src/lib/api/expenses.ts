@@ -1,49 +1,38 @@
-import { apiClient, ApiResponse } from './client';
+import { apiClient, ApiResponse } from "./client";
 
-export interface ExpenseResponse {
+export interface ExpenseItem {
   id: string;
   description: string;
   amount: number;
-  date: string;
-  createdAt: string;
-  updatedAt: string;
+  timestamp: number;
 }
 
 export interface CreateExpenseInput {
   description: string;
   amount: number;
-  date?: string;
-}
-
-export interface FetchExpensesParams {
-  startDate?: string;
-  endDate?: string;
+  timestamp?: number;
 }
 
 /**
- * Fetch list of expenses from backend with optional date range
+ * Fetch all operational expenses from backend
  */
-export async function getExpenses(params?: FetchExpensesParams): Promise<ExpenseResponse[]> {
-  const res = await apiClient.get<ApiResponse<ExpenseResponse[]>>('/expenses', {
-    params,
-  });
-  return res.data.data;
+export async function getExpensesApi(): Promise<ExpenseItem[]> {
+  const response = await apiClient.get<ApiResponse<ExpenseItem[]>>("/settings/expenses");
+  return response.data.data || [];
 }
 
 /**
- * Create a new expense entry
+ * Add a new operational expense to backend
  */
-export async function createExpense(data: CreateExpenseInput): Promise<ExpenseResponse> {
-  const res = await apiClient.post<ApiResponse<ExpenseResponse>>('/expenses', data);
-  return res.data.data;
+export async function createExpenseApi(input: CreateExpenseInput): Promise<ExpenseItem[]> {
+  const response = await apiClient.post<ApiResponse<ExpenseItem[]>>("/settings/expenses", input);
+  return response.data.data || [];
 }
 
 /**
- * Delete an expense by ID
+ * Delete an operational expense by ID
  */
-export async function deleteExpense(id: string): Promise<{ success: boolean; message: string }> {
-  const res = await apiClient.delete<ApiResponse<{ success: boolean; message: string }>>(
-    `/expenses/${id}`,
-  );
-  return res.data.data;
+export async function deleteExpenseApi(id: string): Promise<ExpenseItem[]> {
+  const response = await apiClient.delete<ApiResponse<ExpenseItem[]>>(`/settings/expenses/${id}`);
+  return response.data.data || [];
 }

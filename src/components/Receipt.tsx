@@ -4,6 +4,7 @@ import type { Transaction } from "@/lib/types";
 interface Props {
   transaction: Transaction;
   onClose: () => void;
+  onDelete?: () => void;
 }
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
@@ -12,7 +13,7 @@ function formatDate(ts: number) {
   return `${pad(d.getDate())}/${pad(d.getMonth() + 1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
-export default function Receipt({ transaction, onClose }: Props) {
+export default function Receipt({ transaction, onClose, onDelete }: Props) {
   const isCash = transaction.paymentMethod === "cash";
 
   return (
@@ -98,7 +99,34 @@ export default function Receipt({ transaction, onClose }: Props) {
           </div>
         )}
 
-        <button className="btn-primary" onClick={onClose}>Tutup Struk</button>
+        <div style={{ display: "flex", gap: "8px" }}>
+          {onDelete && (
+            <button
+              type="button"
+              onClick={onDelete}
+              style={{
+                flex: 1,
+                padding: "12px",
+                borderRadius: "var(--r-pill)",
+                backgroundColor: "#fee2e2",
+                color: "#dc2626",
+                border: "1.5px solid #fecaca",
+                fontSize: "13px",
+                fontWeight: 700,
+                cursor: "pointer",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "center",
+                gap: "6px",
+              }}
+            >
+              🗑️ Hapus Transaksi
+            </button>
+          )}
+          <button className="btn-primary" style={{ flex: onDelete ? 1 : undefined, width: onDelete ? undefined : "100%" }} onClick={onClose}>
+            Tutup Struk
+          </button>
+        </div>
       </div>
     </div>
   );

@@ -1,54 +1,55 @@
-import { useQuery, useMutation, useQueryClient, keepPreviousData } from '@tanstack/react-query';
+"use client";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
-  getExpenses,
-  createExpense,
-  deleteExpense,
-  FetchExpensesParams,
+  getExpensesApi,
+  createExpenseApi,
+  deleteExpenseApi,
   CreateExpenseInput,
-  ExpenseResponse,
-} from '@/lib/api/expenses';
+  ExpenseItem,
+} from "@/lib/api/expenses";
 
 export const EXPENSE_KEYS = {
-  all: ['expenses'] as const,
-  lists: () => [...EXPENSE_KEYS.all, 'list'] as const,
-  list: (params?: FetchExpensesParams) => [...EXPENSE_KEYS.lists(), params] as const,
+  all: ["expenses"] as const,
+  list: () => [...EXPENSE_KEYS.all, "list"] as const,
 };
 
 /**
- * Hook to fetch expenses list from backend
+ * Hook to fetch all operational expenses
  */
-export function useExpenses(params?: FetchExpensesParams, options?: { enabled?: boolean }) {
+export function useExpensesQuery(options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: EXPENSE_KEYS.list(params),
-    queryFn: () => getExpenses(params),
-    placeholderData: keepPreviousData,
+    queryKey: EXPENSE_KEYS.list(),
+    queryFn: getExpensesApi,
+    staleTime: 1000 * 30, // 30 seconds
     enabled: options?.enabled ?? true,
   });
 }
 
 /**
- * Hook to create a new expense
+ * Hook to add a new operational expense
  */
-export function useCreateExpense() {
+export function useCreateExpenseMutation() {
   const queryClient = useQueryClient();
 
-  return useMutation<ExpenseResponse, Error, CreateExpenseInput>({
-    mutationFn: (data: CreateExpenseInput) => createExpense(data),
-    onSuccess: () => {
+  return useMutation({
+    mutationFn: (input: CreateExpenseInput) => createExpenseApi(input),
+    onSuccess: (data) => {
+      queryClient.setQueryData(EXPENSE_KEYS.list(), data);
       queryClient.invalidateQueries({ queryKey: EXPENSE_KEYS.all });
     },
   });
 }
 
 /**
- * Hook to delete an expense by ID
+ * Hook to delete an operational expense
  */
-export function useDeleteExpense() {
+export function useDeleteExpenseMutation() {
   const queryClient = useQueryClient();
 
-  return useMutation<{ success: boolean; message: string }, Error, string>({
-    mutationFn: (id: string) => deleteExpense(id),
-    onSuccess: () => {
+  return useMutation({
+    mutationFn: (id: string) => deleteExpenseApi(id),
+    onSuccess: (data) => {
+      queryClient.setQueryData(EXPENSE_KEYS.list(), data);
       queryClient.invalidateQueries({ queryKey: EXPENSE_KEYS.all });
     },
   });

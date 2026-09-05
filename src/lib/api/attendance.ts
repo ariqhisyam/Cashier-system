@@ -17,6 +17,7 @@ export interface AttendanceRecordResponse {
 export interface ClockInInput {
   latitude?: number;
   longitude?: number;
+  accuracy?: number;
   notes?: string;
 }
 

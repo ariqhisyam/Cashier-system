@@ -100,9 +100,14 @@ export interface CloseShiftInput {
   totalHpp: number;
   dailySalaryCost?: number;
   totalExpenses?: number;
+  cashCount?: number;
+  qrisCount?: number;
   netProfit: number;
+  closedBy?: string;
+  employeeId?: string;
   notes?: string;
 }
+
 
 export interface ShiftReportResponse {
   id: string;
@@ -125,12 +130,15 @@ export interface ShiftReportResponse {
   notes?: string;
   closedAt: string;
   createdAt: string;
+  updatedAt: string;
 }
 
 /**
- * Submits shift close report to backend and dispatches Telegram notification
+ * Submits a shift report to backend database and triggers Telegram notification
  */
-export async function submitCloseShift(data: CloseShiftInput): Promise<ShiftReportResponse> {
+export async function submitShiftReport(
+  data: CloseShiftInput,
+): Promise<ShiftReportResponse> {
   const res = await apiClient.post<ApiResponse<ShiftReportResponse>>(
     '/transactions/close-shift',
     data,
@@ -139,7 +147,7 @@ export async function submitCloseShift(data: CloseShiftInput): Promise<ShiftRepo
 }
 
 /**
- * Fetches all shift reports from database
+ * Fetches all shift reports from backend database
  */
 export async function getShiftReports(): Promise<ShiftReportResponse[]> {
   const res = await apiClient.get<ApiResponse<ShiftReportResponse[]>>(
@@ -147,3 +155,25 @@ export async function getShiftReports(): Promise<ShiftReportResponse[]> {
   );
   return res.data.data;
 }
+
+/**
+ * Deletes a specific transaction by ID and restores product inventory
+ */
+export async function deleteTransactionApi(id: string): Promise<{ id: string; message: string }> {
+  const res = await apiClient.delete<ApiResponse<{ id: string; message: string }>>(
+    `/transactions/${id}`,
+  );
+  return res.data.data;
+}
+
+/**
+ * Deletes a specific shift report by ID
+ */
+export async function deleteShiftReportApi(id: string): Promise<{ id: string; message: string }> {
+  const res = await apiClient.delete<ApiResponse<{ id: string; message: string }>>(
+    `/transactions/shift-reports/${id}`,
+  );
+  return res.data.data;
+}
+
+

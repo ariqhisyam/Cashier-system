@@ -37,6 +37,7 @@ export default function KaryawanPage() {
     handleSelectMethod,
     handleCashConfirm,
     handleQrisProofUpload,
+    handleQrisDirectConfirm,
     handleRetakePhoto,
     finalize,
     showReceipt,
@@ -61,6 +62,7 @@ export default function KaryawanPage() {
     todayCups,
     todayCashCups,
     todayQrisCups,
+    todayExpenseTotal,
     handleConfirmCloseShift,
     handleLogout,
   } = useKaryawanCashier();
@@ -112,6 +114,7 @@ export default function KaryawanPage() {
           onSelectMethod={handleSelectMethod}
           onCashConfirm={handleCashConfirm}
           onQrisProofUpload={handleQrisProofUpload}
+          onQrisDirectConfirm={handleQrisDirectConfirm}
           onRetakePhoto={handleRetakePhoto}
           onFinalize={finalize}
           onClose={() => setShowCheckout(false)}
@@ -136,6 +139,7 @@ export default function KaryawanPage() {
           todayCups={todayCups}
           todayCashCups={todayCashCups}
           todayQrisCups={todayQrisCups}
+          todayExpenseTotal={todayExpenseTotal}
           shiftNotes={shiftNotes}
           setShiftNotes={setShiftNotes}
           onConfirmCloseShift={handleConfirmCloseShift}

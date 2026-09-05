@@ -28,6 +28,7 @@ interface CheckoutModalProps {
   onSelectMethod: (method: PaymentMethod) => void;
   onCashConfirm: () => void;
   onQrisProofUpload: (e: React.ChangeEvent<HTMLInputElement>) => void;
+  onQrisDirectConfirm?: () => void;
   onRetakePhoto: () => void;
   onFinalize: () => void;
   onClose: () => void;
@@ -52,6 +53,7 @@ export default function CheckoutModal({
   onSelectMethod,
   onCashConfirm,
   onQrisProofUpload,
+  onQrisDirectConfirm,
   onRetakePhoto,
   onFinalize,
   onClose,
@@ -498,23 +500,45 @@ export default function CheckoutModal({
               </p>
             </div>
 
-            {/* Upload proof button */}
-            <label
-              htmlFor="qris-camera-input"
-              className="btn-primary"
-              style={{
-                display: "flex",
-                alignItems: "center",
-                justifyContent: "center",
-                gap: "6px",
-                cursor: isUploadingProof ? "not-allowed" : "pointer",
-                opacity: isUploadingProof ? 0.7 : 1,
-                width: "100%",
-              }}
-            >
-              <Camera size={18} weight="bold" />
-              <span>{isUploadingProof ? "Mengunggah Bukti..." : "Foto Bukti Pembayaran"}</span>
-            </label>
+            {/* Upload proof or direct confirm buttons */}
+            <div style={{ display: "flex", flexDirection: "column", gap: "8px", width: "100%" }}>
+              <label
+                htmlFor="qris-camera-input"
+                className="btn-primary"
+                style={{
+                  display: "flex",
+                  alignItems: "center",
+                  justifyContent: "center",
+                  gap: "6px",
+                  cursor: isUploadingProof ? "not-allowed" : "pointer",
+                  opacity: isUploadingProof ? 0.7 : 1,
+                  width: "100%",
+                }}
+              >
+                <Camera size={18} weight="bold" />
+                <span>{isUploadingProof ? "Memproses Bukti..." : "Foto Bukti Pembayaran"}</span>
+              </label>
+
+              {onQrisDirectConfirm && (
+                <button
+                  type="button"
+                  onClick={onQrisDirectConfirm}
+                  disabled={isSubmitting}
+                  style={{
+                    padding: "10px",
+                    borderRadius: "var(--r-pill)",
+                    border: "1.5px solid var(--surface-border)",
+                    backgroundColor: "transparent",
+                    color: "var(--ink-secondary)",
+                    fontSize: "12px",
+                    fontWeight: 700,
+                    cursor: isSubmitting ? "not-allowed" : "pointer",
+                  }}
+                >
+                  Konfirmasi Langsung (Tanpa Foto)
+                </button>
+              )}
+            </div>
           </>
         )}
 
@@ -582,7 +606,7 @@ export default function CheckoutModal({
               <button
                 type="button"
                 onClick={onRetakePhoto}
-                disabled={isSubmitting || isUploadingProof}
+                disabled={isSubmitting}
                 style={{
                   flex: 1,
                   padding: "12px",
@@ -592,7 +616,7 @@ export default function CheckoutModal({
                   fontSize: "13px",
                   fontWeight: 700,
                   color: "var(--ink-primary)",
-                  cursor: isSubmitting || isUploadingProof ? "not-allowed" : "pointer",
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
                   display: "flex",
                   alignItems: "center",
                   justifyContent: "center",
@@ -604,11 +628,11 @@ export default function CheckoutModal({
                 type="button"
                 className="btn-primary"
                 onClick={onFinalize}
-                disabled={isSubmitting || isUploadingProof}
+                disabled={isSubmitting}
                 style={{
                   flex: 2,
-                  opacity: isSubmitting || isUploadingProof ? 0.7 : 1,
-                  cursor: isSubmitting || isUploadingProof ? "not-allowed" : "pointer",
+                  opacity: isSubmitting ? 0.7 : 1,
+                  cursor: isSubmitting ? "not-allowed" : "pointer",
                 }}
               >
                 {isSubmitting ? "Menyimpan Transaksi..." : "Selesai & Cetak Struk"}
@@ -616,6 +640,7 @@ export default function CheckoutModal({
             </div>
           </>
         )}
+
       </div>
     </div>
   );

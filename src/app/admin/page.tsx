@@ -1,139 +1,118 @@
 "use client";
 import { useState, useEffect } from "react";
 import { useRouter } from "next/navigation";
-import { useStore, formatRupiah } from "@/lib/store";
-import type { Transaction, Product, User, Expense } from "@/lib/types";
+import { useStore, formatRupiah, isSameDayWib, getWibDateString, calculateDailySalary } from "@/lib/store";
 import BottomNav from "@/components/BottomNav";
 import BarChart from "@/components/BarChart";
-import ReceiptModal from "@/components/Receipt";
 import { SignOut, TrendUp, Money, ChartBar, CreditCard, Coins, Plus, Trash, X, Receipt } from "@phosphor-icons/react";
-import { useLogout } from "@/hooks";
-import { useTransactions } from "@/hooks/useTransactions";
-import { useProducts } from "@/hooks/useProducts";
-import { useUsers } from "@/hooks/useUsers";
-import { useExpenses, useCreateExpense, useDeleteExpense } from "@/hooks/useExpenses";
+import { useLogout, useTransactions, useUsers, useExpensesQuery, useCreateExpenseMutation, useDeleteExpenseMutation } from "@/hooks";
+import type { Transaction } from "@/lib/types";
 
 type ChartFilter = "harian" | "bulanan" | "tahunan";
 
 function pad(n: number) { return String(n).padStart(2, "0"); }
-function isSameDay(ts: number, ref: Date) {
-  const d = new Date(ts);
-  return d.getFullYear() === ref.getFullYear() && d.getMonth() === ref.getMonth() && d.getDate() === ref.getDate();
-}
 
 export default function AdminPage() {
   const { state, dispatch } = useStore();
   const router = useRouter();
   const logoutMutation = useLogout();
+  const { data: liveTransactionsData } = useTransactions({ limit: 500 });
+  const { data: usersData } = useUsers({ limit: 100 });
+  const { data: liveExpensesData } = useExpensesQuery();
+  const createExpenseMutation = useCreateExpenseMutation();
+  const deleteExpenseMutation = useDeleteExpenseMutation();
+
   const [chartFilter, setChartFilter] = useState<ChartFilter>("harian");
   const [showExpenseModal, setShowExpenseModal] = useState(false);
   const [expenseDesc, setExpenseDesc] = useState("");
   const [expenseAmount, setExpenseAmount] = useState("");
   const [expensePresets] = useState(["Es Batu", "Listrik", "Gas", "Transportasi", "Lainnya"]);
-  const [selectedTx, setSelectedTx] = useState<Transaction | null>(null);
-
-  // Live queries from backend
-  const { data: transactionsData } = useTransactions({ limit: 100 });
-  const { data: productsData } = useProducts({ limit: 100 });
-  const { data: usersData } = useUsers({ limit: 100 });
-  const { data: backendExpenses } = useExpenses();
-  const createExpenseMutation = useCreateExpense();
-  const deleteExpenseMutation = useDeleteExpense();
 
   const now = new Date();
 
-  // Map backend database transactions
-  const liveTransactions: Transaction[] = transactionsData?.items
-    ? transactionsData.items.map((tx) => ({
-        id: tx.id,
-        items: (tx.items || []).map((it) => ({
-          name: it.productName,
-          quantity: it.quantity,
-          price: it.price,
-          subtotal: it.subtotal,
+  // Prefer live backend transactions from database when available, fallback to local store
+  const allTxs: Transaction[] = liveTransactionsData?.items?.length
+    ? liveTransactionsData.items.map((it) => ({
+        id: it.id,
+        timestamp: new Date(it.createdAt).getTime(),
+        total: it.total,
+        cashierId: it.cashierId,
+        cashierName: it.cashierName,
+        paymentMethod: it.paymentMethod === "CASH" ? "cash" : "qris",
+        cashPaid: it.cashPaid,
+        changeAmount: it.changeAmount,
+        qrisProofUrl: it.qrisProofUrl,
+        items: it.items.map((i) => ({
+          name: i.productName,
+          quantity: i.quantity,
+          price: i.price,
+          subtotal: i.subtotal,
+          rawMaterialCost: i.rawMaterialCost,
         })),
-        total: tx.total,
-        timestamp: new Date(tx.createdAt).getTime(),
-        cashierId: tx.cashierId,
-        cashierName: tx.cashierName,
-        paymentMethod: (tx.paymentMethod ? tx.paymentMethod.toLowerCase() : "cash") as "cash" | "qris",
-        cashPaid: tx.cashPaid ?? undefined,
-        changeAmount: tx.changeAmount ?? undefined,
-        qrisProofUrl: tx.qrisProofUrl ?? undefined,
       }))
-    : state.transactions || [];
+    : state.transactions;
 
-  // Map backend products for HPP
-  const liveProducts: Product[] = productsData?.products
-    ? productsData.products.map((p) => ({
-        id: p.id,
-        name: p.name,
-        price: p.price,
-        stock: p.stock,
-        imageUrl: p.imageUrl || "/matcha-latte.jpg",
-        rawMaterialCost: p.rawMaterialCost || 0,
-      }))
-    : state.products || [];
-
-  // Map backend employees for salary
-  const liveEmployees = usersData?.users
-    ? usersData.users.filter((u) => u.role === "KARYAWAN")
-    : state.employees || [];
-
-  // Map backend expenses (fallback to state.expenses)
-  const liveExpenses: Expense[] = backendExpenses
-    ? backendExpenses.map((ex) => ({
-        id: ex.id,
-        description: ex.description,
-        amount: ex.amount,
-        timestamp: new Date(ex.date).getTime(),
-      }))
-    : state.expenses || [];
-
-  const todayTxs = liveTransactions.filter((tx) => isSameDay(tx.timestamp, now));
+  const todayTxs = allTxs.filter((tx) => isSameDayWib(tx.timestamp, now));
 
   const grossRevenue = todayTxs.reduce((s, tx) => s + tx.total, 0);
-  const revenueAfterHpp = todayTxs.reduce((sum, tx) => {
+  const totalHpp = todayTxs.reduce((sum, tx) => {
     const cost = tx.items.reduce((s, item) => {
-      const product = liveProducts.find((p) => p.name === item.name);
+      if ((item as any).rawMaterialCost) {
+        return s + (item as any).rawMaterialCost * item.quantity;
+      }
+      const product = state.products.find((p) => p.name === item.name);
       return s + (product ? product.rawMaterialCost * item.quantity : 0);
     }, 0);
-    return sum + tx.total - cost;
+    return sum + cost;
   }, 0);
 
-  // Daily salary cost (beban gaji harian karyawan aktif selalu dialokasikan per hari)
-  const dailySalaryCost = liveEmployees
-    .filter((e: any) => e.isActive && e.monthlySalary)
-    .reduce((s: number, e: any) => s + Math.round((e.monthlySalary ?? 0) / 30), 0);
+  // Live active employees from backend PostgreSQL (fallback to local state)
+  const allStaff = usersData?.users?.length ? usersData.users : state.employees;
+  const activeEmployeesWithSalary = allStaff.filter(
+    (e: any) => e.isActive && (e.monthlySalary ?? 0) > 0
+  );
 
-  // Today's additional expenses (khusus hari ini antara 00:00 s/d 23:59)
-  const todayExpenses = liveExpenses.filter((ex) => isSameDay(ex.timestamp, now));
+  // Daily salary cost: Monthly salary / 30 days (per business requirement)
+  const dailySalaryCost = activeEmployeesWithSalary.reduce(
+    (s: number, e: any) => s + calculateDailySalary(e.monthlySalary),
+    0
+  );
+
+  // Today's additional expenses from backend + local state
+  const allExpenses = liveExpensesData?.length ? liveExpensesData : state.expenses ?? [];
+  const todayExpenses = allExpenses.filter((ex) => isSameDayWib(ex.timestamp, now));
   const totalExpenses = todayExpenses.reduce((s, ex) => s + ex.amount, 0);
 
-  // Net revenue: gross - HPP - salary - additional expenses (bisa minus / nombok)
-  const netRevenue = revenueAfterHpp - dailySalaryCost - totalExpenses;
+  // Exact Business Formula: Gross - Total HPP - Daily Salary - Total Expenses (Supports minus!)
+  const netRevenue = grossRevenue - totalHpp - dailySalaryCost - totalExpenses;
 
   const cashRevenue = todayTxs.filter((tx) => tx.paymentMethod === "cash").reduce((s, tx) => s + tx.total, 0);
   const qrisRevenue = todayTxs.filter((tx) => tx.paymentMethod === "qris").reduce((s, tx) => s + tx.total, 0);
   const cashCount = todayTxs.filter((tx) => tx.paymentMethod === "cash").length;
   const qrisCount = todayTxs.filter((tx) => tx.paymentMethod === "qris").length;
 
-  const activeEmployeesWithSalary = liveEmployees.filter((e: any) => e.isActive && e.monthlySalary);
-
-  function handleAddExpense() {
+  async function handleAddExpense() {
     const amount = parseInt(expenseAmount.replace(/\D/g, ""), 10);
     if (!expenseDesc.trim() || !amount || amount <= 0) return;
-    const newId = crypto.randomUUID();
-    const nowTs = Date.now();
-    dispatch({
-      type: "ADD_EXPENSE",
-      payload: { id: newId, description: expenseDesc.trim(), amount, timestamp: nowTs },
-    });
-    createExpenseMutation.mutate({
+    const newExp = {
+      id: crypto.randomUUID(),
       description: expenseDesc.trim(),
       amount,
-      date: new Date().toISOString(),
+      timestamp: Date.now(),
+    };
+    dispatch({
+      type: "ADD_EXPENSE",
+      payload: newExp,
     });
+    try {
+      createExpenseMutation.mutate({
+        description: newExp.description,
+        amount: newExp.amount,
+        timestamp: newExp.timestamp,
+      });
+    } catch {
+      // ignore
+    }
     setExpenseDesc("");
     setExpenseAmount("");
     setShowExpenseModal(false);
@@ -141,7 +120,11 @@ export default function AdminPage() {
 
   function handleDeleteExpense(id: string) {
     dispatch({ type: "DELETE_EXPENSE", payload: id });
-    deleteExpenseMutation.mutate(id);
+    try {
+      deleteExpenseMutation.mutate(id);
+    } catch {
+      // ignore
+    }
   }
 
   function openExpenseModal(preset?: string) {
@@ -155,31 +138,53 @@ export default function AdminPage() {
       return Array.from({ length: 7 }, (_, i) => {
         const d = new Date(now);
         d.setDate(now.getDate() - (6 - i));
-        const label = `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`;
-        const value = liveTransactions.filter((tx) => {
-          const txd = new Date(tx.timestamp);
-          return txd.getFullYear() === d.getFullYear() && txd.getMonth() === d.getMonth() && txd.getDate() === d.getDate();
-        }).reduce((s, tx) => s + tx.total, 0);
+        const targetWib = getWibDateString(d);
+        const [wibY, m, day] = targetWib.split("-");
+        const label = `${day}/${m}`;
+        const value = allTxs
+          .filter((tx) => getWibDateString(tx.timestamp) === targetWib)
+          .reduce((s, tx) => s + tx.total, 0);
         return { label, value };
       });
     }
     if (chartFilter === "bulanan") {
       return Array.from({ length: 6 }, (_, i) => {
         const d = new Date(now.getFullYear(), now.getMonth() - (5 - i), 1);
-        const label = `${pad(d.getMonth() + 1)}/${String(d.getFullYear()).slice(2)}`;
-        const value = liveTransactions.filter((tx) => {
-          const txd = new Date(tx.timestamp);
-          return txd.getFullYear() === d.getFullYear() && txd.getMonth() === d.getMonth();
-        }).reduce((s, tx) => s + tx.total, 0);
+        const ym = new Intl.DateTimeFormat("en-CA", {
+          timeZone: "Asia/Jakarta",
+          year: "numeric",
+          month: "2-digit",
+        }).format(d);
+        const [y, m] = ym.split("-");
+        const label = `${m}/${y.slice(2)}`;
+        const value = allTxs
+          .filter((tx) => {
+            const txYm = new Intl.DateTimeFormat("en-CA", {
+              timeZone: "Asia/Jakarta",
+              year: "numeric",
+              month: "2-digit",
+            }).format(new Date(tx.timestamp));
+            return txYm === ym;
+          })
+          .reduce((s, tx) => s + tx.total, 0);
         return { label, value };
       });
     }
     return Array.from({ length: 4 }, (_, i) => {
-      const year = now.getFullYear() - (3 - i);
-      const value = liveTransactions.filter((tx) => new Date(tx.timestamp).getFullYear() === year).reduce((s, tx) => s + tx.total, 0);
-      return { label: String(year), value };
+      const year = String(now.getFullYear() - (3 - i));
+      const value = allTxs
+        .filter((tx) => {
+          const txYear = new Intl.DateTimeFormat("en-CA", {
+            timeZone: "Asia/Jakarta",
+            year: "numeric",
+          }).format(new Date(tx.timestamp));
+          return txYear === year;
+        })
+        .reduce((s, tx) => s + tx.total, 0);
+      return { label: year, value };
     });
   }
+
 
   return (
     <div className="page-root">
@@ -273,42 +278,32 @@ export default function AdminPage() {
             </div>
 
             {/* Net Revenue Card */}
-            <div className="stat-card">
+            <div className="stat-card" style={{ borderLeft: netRevenue < 0 ? "4px solid #dc2626" : "4px solid var(--accent)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}>Keuntungan Bersih</p>
-                <span style={{
-                  fontSize: "10px",
-                  fontWeight: 800,
-                  padding: "2px 7px",
-                  borderRadius: "999px",
-                  backgroundColor: netRevenue >= 0 ? "#f0fdf4" : "#fef2f2",
-                  color: netRevenue >= 0 ? "#16a34a" : "#dc2626",
-                  border: `1px solid ${netRevenue >= 0 ? "#86efac" : "#fecaca"}`,
-                }}>
-                  {netRevenue >= 0 ? "Surplus" : "Nombok"}
-                </span>
+                <p style={{ fontSize: "12px", color: netRevenue < 0 ? "#dc2626" : "var(--ink-muted)", fontWeight: 700 }}>
+                  {netRevenue < 0 ? "Rugi Bersih" : "Keuntungan Bersih"}
+                </p>
+                <Money size={18} color={netRevenue < 0 ? "#dc2626" : "var(--accent)"} weight="fill" />
               </div>
               <p style={{ fontSize: "16px", fontWeight: 800, color: netRevenue >= 0 ? "var(--primary)" : "#dc2626", marginTop: "6px" }}>
                 {formatRupiah(netRevenue)}
               </p>
-              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                setelah HPP{dailySalaryCost > 0 ? " & gaji" : ""}{totalExpenses > 0 ? " & pengeluaran" : ""}
+              <p style={{ fontSize: "10px", color: "var(--ink-muted)", marginTop: "2px", lineHeight: 1.3 }}>
+                Gross {formatRupiah(grossRevenue)} - HPP {formatRupiah(totalHpp)}{dailySalaryCost > 0 ? ` - Gaji ${formatRupiah(dailySalaryCost)}` : ""}{totalExpenses > 0 ? ` - Beban ${formatRupiah(totalExpenses)}` : ""}
               </p>
             </div>
 
-            {/* Daily Salary Cost Card — only show if any active employee has salary set */}
-            {dailySalaryCost > 0 && (
-              <div className="stat-card">
-                <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
-                  <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}> Gaji Hari Ini</p>
-                  <p style={{ fontSize: "11px", color: "#d97706", fontWeight: 700 }}>{activeEmployeesWithSalary.length} org</p>
-                </div>
-                <p style={{ fontSize: "16px", fontWeight: 800, color: "#d97706", marginTop: "6px" }}>
-                  {formatRupiah(dailySalaryCost)}
-                </p>
-                <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>disisihkan/hari</p>
+            {/* Daily Salary Cost Card — ALWAYS visible on dashboard */}
+            <div className="stat-card">
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+                <p style={{ fontSize: "12px", color: "var(--ink-muted)", fontWeight: 700 }}>Beban Gaji Hari Ini</p>
+                <p style={{ fontSize: "11px", color: "#d97706", fontWeight: 700 }}>{activeEmployeesWithSalary.length} org</p>
               </div>
-            )}
+              <p style={{ fontSize: "16px", fontWeight: 800, color: "#d97706", marginTop: "6px" }}>
+                {formatRupiah(dailySalaryCost)}
+              </p>
+              <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>disisihkan/hari (gaji/30)</p>
+            </div>
 
             {/* Additional Expenses Card */}
             <div className="stat-card" style={{ cursor: "pointer" }} onClick={() => openExpenseModal()}>
@@ -438,43 +433,29 @@ export default function AdminPage() {
             </div>
 
             <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
-              {liveTransactions.length === 0 ? (
+              {state.transactions.length === 0 ? (
                 <p style={{ textAlign: "center", color: "var(--ink-muted)", fontSize: "13px", padding: "20px 0" }}>
                   Belum ada transaksi
                 </p>
-              ) : liveTransactions.slice(0, 5).map((tx) => {
+              ) : state.transactions.slice(0, 4).map((tx) => {
                 const d = new Date(tx.timestamp);
-                const totalCups = (tx.items || []).reduce((s, it) => s + it.quantity, 0);
                 return (
-                  <div
-                    key={tx.id}
-                    onClick={() => setSelectedTx(tx)}
-                    className="card"
-                    style={{
-                      padding: "12px 14px",
-                      display: "flex",
-                      justifyContent: "space-between",
-                      alignItems: "center",
-                      cursor: "pointer",
-                      transition: "all 0.15s ease",
-                    }}
-                  >
+                  <div key={tx.id} className="card" style={{ padding: "12px 14px", display: "flex", justifyContent: "space-between", alignItems: "center" }}>
                     <div>
                       <div style={{ display: "flex", alignItems: "center", gap: "6px" }}>
                         <p style={{ fontSize: "13px", fontWeight: 700, color: "var(--ink-primary)" }}>
-                          #{tx.id.slice(0, 8).toUpperCase()}
+                          #{tx.id.slice(-6).toUpperCase()}
                         </p>
                         <span style={{
-                          fontSize: "10px", padding: "1px 6px", borderRadius: "9999px", fontWeight: 700,
+                          fontSize: "10px", padding: "1px 5px", borderRadius: "9999px", fontWeight: 700,
                           backgroundColor: tx.paymentMethod === "cash" ? "#f0fdf4" : "#eff6ff",
                           color: tx.paymentMethod === "cash" ? "#16a34a" : "#2563eb",
-                          border: `1px solid ${tx.paymentMethod === "cash" ? "#86efac" : "#93c5fd"}`,
                         }}>
-                          {tx.paymentMethod === "cash" ? "💵 Cash" : "📱 QRIS"}
+                          {tx.paymentMethod === "cash" ? "💵" : "📱"}
                         </span>
                       </div>
                       <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "2px" }}>
-                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} · {tx.cashierName || "Kasir"} · {totalCups} Cup
+                        {pad(d.getDate())}/{pad(d.getMonth()+1)} {pad(d.getHours())}:{pad(d.getMinutes())} · {tx.items.length} item
                       </p>
                     </div>
                     <span style={{ fontSize: "14px", fontWeight: 800, color: "var(--primary)" }}>
@@ -487,11 +468,6 @@ export default function AdminPage() {
           </div>
         </div>
       </div>
-
-      {/* Selected Transaction Receipt Modal */}
-      {selectedTx && (
-        <ReceiptModal transaction={selectedTx} onClose={() => setSelectedTx(null)} />
-      )}
 
       {/* Add Expense Modal */}
       {showExpenseModal && (

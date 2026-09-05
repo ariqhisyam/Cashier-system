@@ -4,9 +4,26 @@ import React, {
   useContext,
   useReducer,
   useEffect,
+  useRef,
   ReactNode,
 } from "react";
 import type { AppState, Product, Transaction, Employee, Expense, ShiftReport, AttendanceRecord, OutletLocation } from "./types";
+
+/**
+ * Daily salary formula: Monthly salary / 30 days (per business spec)
+ */
+export function calculateDailySalary(monthlySalary?: number | null): number {
+  if (!monthlySalary || monthlySalary <= 0) return 0;
+  return Math.round(monthlySalary / 30);
+}
+
+/**
+ * Weekly salary formula: Monthly salary / 4 weeks (per business spec)
+ */
+export function calculateWeeklySalary(monthlySalary?: number | null): number {
+  if (!monthlySalary || monthlySalary <= 0) return 0;
+  return Math.round(monthlySalary / 4);
+}
 
 const STORAGE_KEY = "matcha-kyoto-data-v3";
 const STORAGE_KEY_V2 = "matcha-kyoto-data-v2"; // used for migration
@@ -70,6 +87,7 @@ type Action =
   | { type: "LOGIN"; payload: { role: "admin" | "karyawan"; employee?: Employee | null } }
   | { type: "LOGOUT" }
   | { type: "ADD_TRANSACTION"; payload: Transaction }
+  | { type: "DELETE_TRANSACTION"; payload: string }
   | { type: "UPDATE_PRODUCT"; payload: Product }
   | { type: "ADD_PRODUCT"; payload: Product }
   | { type: "DELETE_PRODUCT"; payload: string }
@@ -122,6 +140,21 @@ function reducer(state: AppState, action: Action): AppState {
         ...state,
         products,
         transactions: [action.payload, ...state.transactions],
+      };
+    }
+    case "DELETE_TRANSACTION": {
+      const txToDelete = state.transactions.find((t) => t.id === action.payload);
+      const products = txToDelete
+        ? state.products.map((p) => {
+            const item = txToDelete.items.find((i) => i.name === p.name);
+            if (!item) return p;
+            return { ...p, stock: p.stock + item.quantity };
+          })
+        : state.products;
+      return {
+        ...state,
+        products,
+        transactions: state.transactions.filter((t) => t.id !== action.payload),
       };
     }
     case "UPDATE_PRODUCT":
@@ -214,6 +247,7 @@ const StoreContext = createContext<{
 
 export function StoreProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, INITIAL_STATE);
+  const isHydratedRef = useRef(false);
 
   // Hydrate from localStorage on mount (with v2→v3 migration)
   useEffect(() => {
@@ -252,11 +286,14 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }
     } catch {
       // ignore
+    } finally {
+      isHydratedRef.current = true;
     }
   }, []);
 
-  // Persist to localStorage on state change
+  // Persist to localStorage on state change ONLY after hydration is complete
   useEffect(() => {
+    if (!isHydratedRef.current) return;
     localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   }, [state]);
 
@@ -275,11 +312,85 @@ export function useStore() {
 
 export function formatRupiah(amount: number): string {
   const isNegative = amount < 0;
-  const absVal = Math.abs(Math.round(amount || 0));
-  const formatted = new Intl.NumberFormat("id-ID", {
+  const absFormatted = new Intl.NumberFormat("id-ID", {
     style: "currency",
     currency: "IDR",
     minimumFractionDigits: 0,
-  }).format(absVal);
-  return isNegative ? `-${formatted}` : formatted;
+    maximumFractionDigits: 0,
+  }).format(Math.abs(amount));
+
+  return isNegative ? `-${absFormatted}` : absFormatted;
 }
+
+/**
+ * Returns YYYY-MM-DD in Asia/Jakarta (WIB) timezone
+ */
+export function getWibDateString(dateOrTs: number | string | Date = new Date()): string {
+  const d = new Date(dateOrTs);
+  return new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(d);
+}
+
+/**
+ * Checks if two timestamps/dates fall on the exact same day in WIB (Asia/Jakarta)
+ */
+export function isSameDayWib(
+  dateOrTs1: number | string | Date,
+  dateOrTs2: number | string | Date = new Date()
+): boolean {
+  return getWibDateString(dateOrTs1) === getWibDateString(dateOrTs2);
+}
+
+/**
+ * Checks if a timestamp/date falls within the current Monday-Sunday week in WIB
+ */
+export function isSameWeekWib(
+  dateOrTs: number | string | Date,
+  ref: number | string | Date = new Date()
+): boolean {
+  const d = new Date(dateOrTs);
+  const nowWibStr = getWibDateString(ref);
+  const [year, month, day] = nowWibStr.split("-").map(Number);
+  const nowWib = new Date(year, month - 1, day);
+
+  const dayOfWeek = (nowWib.getDay() + 6) % 7; // Monday = 0, Sunday = 6
+  const startOfWeek = new Date(nowWib);
+  startOfWeek.setDate(nowWib.getDate() - dayOfWeek);
+  startOfWeek.setHours(0, 0, 0, 0);
+
+  const endOfWeek = new Date(startOfWeek);
+  endOfWeek.setDate(startOfWeek.getDate() + 7);
+
+  const targetWibStr = getWibDateString(d);
+  const [tYear, tMonth, tDay] = targetWibStr.split("-").map(Number);
+  const targetWib = new Date(tYear, tMonth - 1, tDay);
+
+  return targetWib >= startOfWeek && targetWib < endOfWeek;
+}
+
+/**
+ * Checks if a timestamp/date falls within the current month in WIB
+ */
+export function isSameMonthWib(
+  dateOrTs: number | string | Date,
+  ref: number | string | Date = new Date()
+): boolean {
+  const d1 = new Date(dateOrTs);
+  const d2 = new Date(ref);
+  const f1 = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+  }).format(d1);
+  const f2 = new Intl.DateTimeFormat("en-CA", {
+    timeZone: "Asia/Jakarta",
+    year: "numeric",
+    month: "2-digit",
+  }).format(d2);
+  return f1 === f2;
+}
+

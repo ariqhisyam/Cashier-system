@@ -14,7 +14,7 @@ interface AttendanceModalProps {
   outletLocation?: OutletLocation;
   isAbsenLoading: boolean;
   absenError: string;
-  onClockIn: () => void;
+  onClockIn: (isEmergency?: boolean) => void;
   onClose: () => void;
 }
 
@@ -98,55 +98,66 @@ export default function AttendanceModal({
               color: "var(--ink-muted)",
               fontWeight: 600,
               textTransform: "uppercase",
+              letterSpacing: "0.5px",
             }}
           >
-            Status Presensi Hari Ini
+            Status Presensi Masuk
           </p>
-          <div
+          <p
             style={{
-              display: "flex",
-              justifyContent: "space-between",
-              alignItems: "center",
-              marginTop: "4px",
+              fontSize: "16px",
+              fontWeight: 800,
+              color: activeAttendance ? "#15803d" : "var(--ink-secondary)",
+              marginTop: "2px",
             }}
           >
-            <p
+            {activeAttendance
+              ? "✅ Sedang Bertugas (Sudah Absen)"
+              : "⏳ Belum Absen Masuk"}
+          </p>
+          {activeAttendance && (
+            <div
               style={{
-                fontSize: "15px",
-                fontWeight: 800,
-                color: activeAttendance ? "#16a34a" : "var(--ink-primary)",
+                marginTop: "8px",
+                fontSize: "12px",
+                color: "var(--ink-muted)",
+                display: "flex",
+                flexDirection: "column",
+                gap: "2px",
               }}
             >
-              {activeAttendance ? "🟢 Sudah Absen Masuk" : "⚪ Belum Absen Masuk"}
-            </p>
-            {activeAttendance && (
-              <span style={{ fontSize: "13px", fontWeight: 700, color: "#166534" }}>
-                {formatTimeOnly(activeAttendance.clockIn)} WIB
+              <span>
+                🕒 Jam Masuk:{" "}
+                <strong style={{ color: "var(--ink-primary)" }}>
+                  {formatTimeOnly(activeAttendance.clockIn)} WIB
+                </strong>
               </span>
-            )}
-          </div>
-          {activeAttendance && (
-            <p style={{ fontSize: "11px", color: "var(--ink-muted)", marginTop: "4px" }}>
-              📍 Jarak terdeteksi: {activeAttendance.distanceMeters}m dari outlet
-            </p>
+              <span>
+                📍 Lokasi Presensi:{" "}
+                <strong style={{ color: "var(--ink-primary)" }}>
+                  {activeAttendance.distanceMeters} meter dari outlet
+                </strong>
+              </span>
+            </div>
           )}
         </div>
 
-        {/* Outlet Info */}
+        {/* Geofence Info Card */}
         <div
           style={{
             backgroundColor: "var(--bg-app)",
+            border: "1px solid var(--surface-border)",
             borderRadius: "var(--r-md)",
-            padding: "10px 14px",
-            marginBottom: "14px",
+            padding: "12px 14px",
+            marginBottom: "16px",
             fontSize: "12px",
             display: "flex",
             flexDirection: "column",
-            gap: "4px",
+            gap: "6px",
           }}
         >
           <div style={{ display: "flex", justifyContent: "space-between" }}>
-            <span style={{ color: "var(--ink-muted)" }}>Lokasi Toko:</span>
+            <span style={{ color: "var(--ink-muted)" }}>Lokasi Outlet:</span>
             <strong style={{ color: "var(--ink-primary)" }}>
               {outletLocation?.addressName || "Outlet Pontianak"}
             </strong>
@@ -185,25 +196,48 @@ export default function AttendanceModal({
 
         {/* Action Button */}
         {!activeAttendance ? (
-          <button
-            type="button"
-            className="btn-primary"
-            onClick={onClockIn}
-            disabled={isAbsenLoading}
-            style={{ width: "100%" }}
-          >
-            {isAbsenLoading ? (
-              <>
-                <SpinnerGap size={18} className="animate-spin" />
-                <span>Memverifikasi Lokasi GPS...</span>
-              </>
-            ) : (
-              <>
-                <MapPin size={18} weight="fill" />
-                <span>Klik Untuk Absen Masuk Sekarang</span>
-              </>
+          <div style={{ display: "flex", flexDirection: "column", gap: "8px" }}>
+            <button
+              type="button"
+              className="btn-primary"
+              onClick={() => onClockIn(false)}
+              disabled={isAbsenLoading}
+              style={{ width: "100%" }}
+            >
+              {isAbsenLoading ? (
+                <>
+                  <SpinnerGap size={18} className="animate-spin" />
+                  <span>Memverifikasi Lokasi GPS...</span>
+                </>
+              ) : (
+                <>
+                  <MapPin size={18} weight="fill" />
+                  <span>{absenError ? "Coba Lagi Deteksi GPS" : "Klik Untuk Absen Masuk"}</span>
+                </>
+              )}
+            </button>
+
+            {absenError && (
+              <button
+                type="button"
+                onClick={() => onClockIn(true)}
+                disabled={isAbsenLoading}
+                style={{
+                  width: "100%",
+                  padding: "10px 14px",
+                  borderRadius: "var(--r-pill)",
+                  border: "1.5px solid #fde68a",
+                  backgroundColor: "#fffbeb",
+                  color: "#92400e",
+                  fontSize: "12px",
+                  fontWeight: 700,
+                  cursor: isAbsenLoading ? "not-allowed" : "pointer",
+                }}
+              >
+                ⚠️ Sinyal GPS Bermasalah? Presensi Darurat (Bypass)
+              </button>
             )}
-          </button>
+          </div>
         ) : (
           <button
             type="button"

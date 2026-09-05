@@ -3,13 +3,15 @@ import {
   createTransaction,
   getTransactions,
   getTransactionById,
-  submitCloseShift,
+  submitShiftReport,
   getShiftReports,
   CreateTransactionInput,
   FetchTransactionsParams,
   TransactionResponse,
   CloseShiftInput,
   ShiftReportResponse,
+  deleteTransactionApi,
+  deleteShiftReportApi,
 } from '@/lib/api/transactions';
 import { PRODUCT_KEYS } from './useProducts';
 
@@ -19,7 +21,10 @@ export const TRANSACTION_KEYS = {
   list: (params?: FetchTransactionsParams) => [...TRANSACTION_KEYS.lists(), params] as const,
   details: () => [...TRANSACTION_KEYS.all, 'detail'] as const,
   detail: (id: string) => [...TRANSACTION_KEYS.details(), id] as const,
-  shifts: () => [...TRANSACTION_KEYS.all, 'shifts'] as const,
+};
+
+export const SHIFT_REPORT_KEYS = {
+  all: ['shift-reports'] as const,
 };
 
 /**
@@ -46,14 +51,14 @@ export function useTransaction(id: string, options?: { enabled?: boolean }) {
 }
 
 /**
- * Hook to query shift reports list
+ * Hook to query all shift reports from backend
  */
 export function useShiftReports(options?: { enabled?: boolean }) {
   return useQuery({
-    queryKey: TRANSACTION_KEYS.shifts(),
+    queryKey: SHIFT_REPORT_KEYS.all,
     queryFn: () => getShiftReports(),
-    placeholderData: keepPreviousData,
     enabled: options?.enabled ?? true,
+    refetchInterval: 15000,
   });
 }
 
@@ -74,16 +79,45 @@ export function useCreateTransaction() {
 }
 
 /**
- * Hook to submit shift close report to backend & trigger Telegram notification
+ * Hook to submit a shift close report to backend and trigger Telegram alert
  */
-export function useSubmitCloseShift() {
+export function useCloseShiftReport() {
   const queryClient = useQueryClient();
 
   return useMutation<ShiftReportResponse, Error, CloseShiftInput>({
-    mutationFn: (data: CloseShiftInput) => submitCloseShift(data),
+    mutationFn: (data: CloseShiftInput) => submitShiftReport(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SHIFT_REPORT_KEYS.all });
+      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.all });
+    },
+  });
+}
+
+/**
+ * Hook to delete a specific transaction on backend and restore product stocks
+ */
+export function useDeleteTransaction() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ id: string; message: string }, Error, string>({
+    mutationFn: (id: string) => deleteTransactionApi(id),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.all });
-      queryClient.invalidateQueries({ queryKey: TRANSACTION_KEYS.shifts() });
+      queryClient.invalidateQueries({ queryKey: PRODUCT_KEYS.all });
+    },
+  });
+}
+
+/**
+ * Hook to delete a specific shift report on backend
+ */
+export function useDeleteShiftReport() {
+  const queryClient = useQueryClient();
+
+  return useMutation<{ id: string; message: string }, Error, string>({
+    mutationFn: (id: string) => deleteShiftReportApi(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: SHIFT_REPORT_KEYS.all });
     },
   });
 }
