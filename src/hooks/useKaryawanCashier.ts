@@ -206,8 +206,12 @@ export function useKaryawanCashier() {
 
     try {
       setIsUploadingProof(true);
-      // Fast client-side image compression (<150KB) directly to Base64 Data URL
-      const { dataUrl } = await compressImage(rawFile, 1024, 1024, 0.75);
+      // Fast client-side image compression (~50-90KB) directly to Base64 Data URL
+      const { dataUrl } = await compressImage(rawFile, 800, 800, 0.65);
+      if (!dataUrl) {
+        alert("Format foto tidak didukung atau foto gagal diproses. Silakan coba pilih foto lain.");
+        return;
+      }
       setQrisProofUrl(dataUrl);
       setCheckoutStep("qris_proof");
     } catch (err) {
