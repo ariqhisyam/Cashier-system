@@ -87,15 +87,21 @@ export default function Receipt({ transaction, onClose, onDelete }: Props) {
         </div>
 
         {/* QRIS Proof */}
-        {!isCash && transaction.qrisProofUrl && (
+        {!isCash && (
           <div style={{ marginBottom: 16 }}>
             <p style={{ fontSize: 12, fontWeight: 700, color: "var(--ink-secondary)", marginBottom: 6 }}>Bukti Pembayaran QRIS</p>
-            {/* eslint-disable-next-line @next/next/no-img-element */}
-            <img
-              src={transaction.qrisProofUrl}
-              alt="Bukti QRIS"
-              style={{ width: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "var(--r-md)", border: "1px solid var(--surface-border)", backgroundColor: "#f8fafc" }}
-            />
+            {transaction.qrisProofUrl ? (
+              // eslint-disable-next-line @next/next/no-img-element
+              <img
+                src={transaction.qrisProofUrl}
+                alt="Bukti QRIS"
+                style={{ width: "100%", maxHeight: "140px", objectFit: "contain", borderRadius: "var(--r-md)", border: "1px solid var(--surface-border)", backgroundColor: "#f8fafc" }}
+              />
+            ) : (
+              <div style={{ padding: "8px 12px", borderRadius: "var(--r-md)", backgroundColor: "#f8fafc", border: "1px dashed var(--surface-border)", fontSize: "12px", color: "var(--ink-muted)", display: "flex", alignItems: "center", gap: "6px" }}>
+                <span>📱 Foto bukti terkirim langsung ke grup Telegram</span>
+              </div>
+            )}
           </div>
         )}
 

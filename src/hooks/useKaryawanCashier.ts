@@ -36,7 +36,6 @@ export function useKaryawanCashier() {
   const { state, dispatch } = useStore();
   const router = useRouter();
   const logoutMutation = useLogout();
-  const uploadStorageMutation = useUploadStorage();
   const createTransactionMutation = useCreateTransaction();
   const closeShiftMutation = useCloseShiftReport();
   const { data: liveActiveAttendance } = useActiveAttendance();
@@ -207,30 +206,14 @@ export function useKaryawanCashier() {
 
     try {
       setIsUploadingProof(true);
-      // Fast client-side image compression (<150KB)
-      const { file: compressedFile, dataUrl } = await compressImage(rawFile, 1024, 1024, 0.75);
+      // Fast client-side image compression (<150KB) directly to Base64 Data URL
+      const { dataUrl } = await compressImage(rawFile, 1024, 1024, 0.75);
       setQrisProofUrl(dataUrl);
       setCheckoutStep("qris_proof");
-
-      // Background upload to Supabase Storage
-      uploadStorageMutation.mutate(
-        { file: compressedFile, folder: "qris_proofs" },
-        {
-          onSuccess: (res) => {
-            if (res?.url) {
-              setQrisProofUrl(res.url);
-            }
-          },
-          onError: (err) => {
-            console.warn("Gagal unggah foto ke cloud storage, menggunakan data lokal:", err);
-          },
-          onSettled: () => {
-            setIsUploadingProof(false);
-          },
-        }
-      );
     } catch (err) {
       console.error("Gagal kompres foto:", err);
+      alert("Gagal memproses foto bukti pembayaran. Silakan coba lagi.");
+    } finally {
       setIsUploadingProof(false);
     }
   }

@@ -580,7 +580,7 @@ export default function CheckoutModal({
             >
               <CheckCircle size={18} color="#16a34a" weight="fill" />
               <p style={{ fontSize: "13px", fontWeight: 700, color: "#16a34a" }}>
-                {isUploadingProof ? "Sedang mengunggah foto ke storage..." : "Bukti pembayaran berhasil dipilih"}
+                {isUploadingProof ? "Memproses foto bukti..." : "Bukti pembayaran siap dilampirkan"}
               </p>
             </div>
 
