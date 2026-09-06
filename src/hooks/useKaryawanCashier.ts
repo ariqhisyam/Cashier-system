@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import { useRouter } from "next/navigation";
 import { useStore, isSameDayWib } from "@/lib/store";
 import type {
@@ -50,7 +50,7 @@ export function useKaryawanCashier() {
   const todayExpenseTotal = todayExpenses.reduce((s, ex) => s + ex.amount, 0);
 
   // Fetch products from backend or fallback to store
-  const { data: productsData } = useProducts({
+  const { data: productsData, isLoading: isLoadingProducts } = useProducts({
     page: 1,
     limit: 100,
     sortBy: "createdAt",
@@ -72,6 +72,28 @@ export function useKaryawanCashier() {
 
   // Cart state
   const [cart, setCart] = useState<CartItem[]>([]);
+
+  // Auto-reconcile cart items when real products from backend are loaded
+  useEffect(() => {
+    if (!productsData?.products || productsData.products.length === 0) return;
+    setCart((prevCart) => {
+      let changed = false;
+      const reconciled = prevCart.map((item) => {
+        const exactMatch = productsData.products.find((p) => p.id === item.productId);
+        if (exactMatch) return item;
+
+        const nameMatch = productsData.products.find(
+          (p) => p.name.toLowerCase() === (item as any).name?.toLowerCase()
+        );
+        if (nameMatch && nameMatch.id !== item.productId) {
+          changed = true;
+          return { ...item, productId: nameMatch.id };
+        }
+        return item;
+      });
+      return changed ? reconciled : prevCart;
+    });
+  }, [productsData]);
 
   // Checkout modal & payment state
   const [showCheckout, setShowCheckout] = useState(false);
@@ -232,10 +254,14 @@ export function useKaryawanCashier() {
     if (cart.length === 0 || createTransactionMutation.isPending) return;
 
     const payload = {
-      items: cart.map((c) => ({
-        productId: c.productId,
-        quantity: c.quantity,
-      })),
+      items: cart.map((c) => {
+        const matched = products.find((p) => p.id === c.productId);
+        return {
+          productId: matched?.id || c.productId,
+          productName: matched?.name,
+          quantity: c.quantity,
+        };
+      }),
       paymentMethod: (paymentMethod === "cash" ? "CASH" : "QRIS") as "CASH" | "QRIS",
       cashPaid: paymentMethod === "cash" ? cashPaid : undefined,
       qrisProofUrl: paymentMethod === "qris" ? qrisProofUrl : undefined,
@@ -563,5 +589,6 @@ export function useKaryawanCashier() {
     todayExpenseTotal,
     handleConfirmCloseShift,
     handleLogout,
+    isLoadingProducts,
   };
 }

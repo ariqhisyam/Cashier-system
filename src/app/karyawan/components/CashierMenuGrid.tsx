@@ -7,12 +7,14 @@ import { formatRupiah } from "@/lib/store";
 
 interface CashierMenuGridProps {
   products: Product[];
+  isLoading?: boolean;
   getQty: (productId: string) => number;
   adjustCart: (productId: string, delta: number) => void;
 }
 
 export default function CashierMenuGrid({
   products,
+  isLoading = false,
   getQty,
   adjustCart,
 }: CashierMenuGridProps) {
@@ -26,6 +28,48 @@ export default function CashierMenuGrid({
         paddingBottom: "100px",
       }}
     >
+      {isLoading && products.length === 0 &&
+        Array.from({ length: 6 }).map((_, i) => (
+          <div
+            key={`skeleton-${i}`}
+            className="card"
+            style={{
+              display: "flex",
+              flexDirection: "column",
+              borderRadius: "var(--r-md)",
+              overflow: "hidden",
+              border: "1px solid var(--surface-border)",
+              backgroundColor: "var(--surface)",
+            }}
+          >
+            <div
+              style={{
+                width: "100%",
+                aspectRatio: "1",
+                backgroundColor: "#f1f5f9",
+              }}
+            />
+            <div style={{ padding: "12px" }}>
+              <div
+                style={{
+                  height: "14px",
+                  backgroundColor: "#e2e8f0",
+                  borderRadius: "4px",
+                  marginBottom: "8px",
+                  width: "80%",
+                }}
+              />
+              <div
+                style={{
+                  height: "12px",
+                  backgroundColor: "#e2e8f0",
+                  borderRadius: "4px",
+                  width: "50%",
+                }}
+              />
+            </div>
+          </div>
+        ))}
       {products.map((product) => {
         const qty = getQty(product.id);
         const outOfStock = product.stock === 0;

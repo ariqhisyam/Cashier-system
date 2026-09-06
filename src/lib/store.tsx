@@ -28,13 +28,7 @@ export function calculateWeeklySalary(monthlySalary?: number | null): number {
 const STORAGE_KEY = "matcha-kyoto-data-v3";
 const STORAGE_KEY_V2 = "matcha-kyoto-data-v2"; // used for migration
 
-const DEFAULT_PRODUCTS: Product[] = [
-  { id: "1", name: "Pink Berry",   price: 17000, stock: 50, imageUrl: "/matcha-latte.jpg",    rawMaterialCost: 6419 },
-  { id: "2", name: "Matcha",       price: 15000, stock: 50, imageUrl: "/hojicha-latte.jpg",  rawMaterialCost: 5033 },
-  { id: "3", name: "Matcha Latte", price: 17000, stock: 50, imageUrl: "/matcha-cake.jpg",    rawMaterialCost: 6540 },
-  { id: "4", name: "Seasalt",      price: 20000, stock: 50, imageUrl: "/matcha-ice-cream.jpg", rawMaterialCost: 9423 },
-  { id: "5", name: "Coconut",      price: 18000, stock: 50, imageUrl: "/matcha-cookie.jpg",  rawMaterialCost: 7832 },
-];
+const DEFAULT_PRODUCTS: Product[] = [];
 
 export function generateEmployeeKey(): string {
   const chars = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";

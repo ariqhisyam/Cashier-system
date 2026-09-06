@@ -14,6 +14,7 @@ export default function KaryawanPage() {
   const {
     activeEmployee,
     products,
+    isLoadingProducts,
     cart,
     cartCount,
     total,
@@ -83,6 +84,7 @@ export default function KaryawanPage() {
         {/* Product Menu Grid */}
         <CashierMenuGrid
           products={products}
+          isLoading={isLoadingProducts}
           getQty={getQty}
           adjustCart={adjustCart}
         />
