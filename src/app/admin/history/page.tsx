@@ -88,8 +88,8 @@ export default function AdminHistoryPage() {
   const now = new Date();
 
   // Prefer live backend transactions from database when available, fallback to local store
-  const allTxs: Transaction[] = liveTransactionsData?.items?.length
-    ? liveTransactionsData.items.map((it) => ({
+  const allTxs: Transaction[] = liveTransactionsData !== undefined
+    ? (liveTransactionsData.items || []).map((it) => ({
         id: it.id,
         timestamp: new Date(it.createdAt).getTime(),
         total: it.total,
@@ -110,7 +110,7 @@ export default function AdminHistoryPage() {
     : state.transactions;
 
   // Prefer live backend shift reports from PostgreSQL database, fallback to local store
-  const allShifts: ShiftReport[] = liveShiftReports?.length
+  const allShifts: ShiftReport[] = liveShiftReports !== undefined
     ? liveShiftReports.map((sr) => ({
         id: sr.id,
         shiftName: sr.shiftName,
@@ -259,12 +259,13 @@ export default function AdminHistoryPage() {
 
     try {
       await deleteShiftReportMutation.mutateAsync(sr.id);
+    } catch (err: any) {
+      console.warn("Laporan shift tidak ditemukan di server (sudah terhapus), tetap bersihkan dari lokal:", err);
+    } finally {
       dispatch({ type: "DELETE_SHIFT_REPORT", payload: sr.id });
       if (selectedShift?.id === sr.id) {
         setSelectedShift(null);
       }
-    } catch (err: any) {
-      alert("Gagal menghapus laporan shift: " + (err.message || "Terjadi kesalahan"));
     }
   };
 
@@ -278,12 +279,13 @@ export default function AdminHistoryPage() {
 
     try {
       await deleteTransactionMutation.mutateAsync(tx.id);
+    } catch (err: any) {
+      console.warn("Transaksi tidak ditemukan di server (sudah terhapus), tetap bersihkan dari lokal:", err);
+    } finally {
       dispatch({ type: "DELETE_TRANSACTION", payload: tx.id });
       if (selectedTx?.id === tx.id) {
         setSelectedTx(null);
       }
-    } catch (err: any) {
-      alert("Gagal menghapus transaksi: " + (err.message || "Terjadi kesalahan"));
     }
   };
 
